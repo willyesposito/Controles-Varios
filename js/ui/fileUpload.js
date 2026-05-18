@@ -48,16 +48,20 @@ export async function initFileUploadStep(container, { clientId, fileType, existi
   }
 
   renderDropZone(container, fileType, async (file) => {
-    renderLoading(container, 'Leyendo archivo…');
+    renderLoadingProgress(container, 'reading', 0);
 
     let arrayBuffer;
     try {
-      arrayBuffer = await readFileAsArrayBuffer(file);
+      arrayBuffer = await readFileAsArrayBuffer(file, (pct) => {
+        updateReadingProgress(container, pct);
+      });
     } catch (err) {
       renderError(container, err.message,
         () => initFileUploadStep(container, { clientId, fileType, existingData, onComplete }));
       return;
     }
+
+    renderLoadingProgress(container, 'parsing');
 
     let headers, preview;
     try {
@@ -75,7 +79,7 @@ export async function initFileUploadStep(container, { clientId, fileType, existi
       headers, preview, fileType, savedMapping,
       fileName: file.name,
       onConfirm: async (mapping) => {
-        renderLoading(container, 'Procesando archivo…');
+        renderLoadingProgress(container, 'parsing');
         try {
           const result = parseFile(arrayBuffer, fileType, mapping);
           await saveFileProfile(clientId, fileType, mapping);
@@ -98,7 +102,7 @@ export async function initFileUploadStep(container, { clientId, fileType, existi
             () => renderMappingForm(container, {
               headers, preview, fileType, savedMapping, fileName: file.name,
               onConfirm: async (m) => {
-                renderLoading(container, 'Procesando archivo…');
+                renderLoadingProgress(container, 'parsing');
                 try {
                   const result = parseFile(arrayBuffer, fileType, m);
                   await saveFileProfile(clientId, fileType, m);
@@ -170,13 +174,33 @@ function handleFile(file, onFile, container, fileType) {
   onFile(file);
 }
 
-function renderLoading(container, msg) {
+/**
+ * Muestra la pantalla de carga con barra de progreso.
+ * phase = 'reading'  → barra real con porcentaje
+ * phase = 'parsing'  → barra indeterminada animada
+ */
+function renderLoadingProgress(container, phase, pct = 0) {
+  const label = phase === 'reading' ? `Leyendo archivo… ${pct}%` : 'Procesando…';
+  const indet = phase === 'parsing';
   container.innerHTML = `
     <div class="loading-screen">
       <div class="spinner"></div>
-      <p class="text-muted">${msg}</p>
+      <p class="text-muted" id="js-progress-label">${label}</p>
+      <div class="progress-bar-wrap">
+        <div class="progress-bar-fill ${indet ? 'progress-bar-fill--indeterminate' : ''}"
+             id="js-progress-fill"
+             style="width:${indet ? '40' : pct}%"></div>
+      </div>
     </div>
   `;
+}
+
+/** Actualiza el label y el ancho de la barra sin re-renderizar todo el DOM */
+function updateReadingProgress(container, pct) {
+  const label = container.querySelector('#js-progress-label');
+  const fill  = container.querySelector('#js-progress-fill');
+  if (label) label.textContent = `Leyendo archivo… ${pct}%`;
+  if (fill)  fill.style.width  = `${pct}%`;
 }
 
 function renderError(container, msg, onRetry) {
