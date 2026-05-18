@@ -1,0 +1,17 @@
+# Carpeta interna de Claude Code (memoria del asistente, no va al repo)
+.claude/
+
+# Archivos de sistema Windows
+Thumbs.db
+desktop.ini
+
+# Archivos de sistema Mac (por si alguien del equipo usa Mac)
+.DS_Store
+
+# VS Code — configuración personal que no hace falta compartir
+.vscode/settings.json
+.vscode/launch.json
+
+# Archivos temporales
+*.tmp
+*.log

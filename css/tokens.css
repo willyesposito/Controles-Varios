@@ -1,0 +1,74 @@
+/* tokens.css — Variables de diseño H&A para Controles Nómina */
+
+:root {
+  /* ── Paleta H&A ─────────────────────────────────────── */
+  --color-primary:     #00ACD4;   /* celeste H&A */
+  --color-wordmark:    #8C837B;   /* gris wordmark */
+  --color-black:       #000000;
+  --color-white:       #FFFFFF;
+  --color-border:      #E7E6E6;
+  --color-bg:          #F5F7F8;
+  --color-bg-subtle:   #ECEEF0;
+
+  /* Semánticos */
+  --color-danger:      #D32F2F;
+  --color-danger-bg:   #FFEBEE;
+  --color-success:     #388E3C;
+  --color-success-bg:  #E8F5E9;
+  --color-warning:     #F57C00;
+  --color-warning-bg:  #FFF8E1;
+  --color-info-bg:     #E1F5FE;
+
+  /* ── Tipografía ──────────────────────────────────────── */
+  --font:              "Source Sans Pro", Arial, Helvetica, sans-serif;
+  --fw-light:          300;
+  --fw-regular:        400;
+  --fw-semibold:       600;
+  --fw-bold:           700;
+
+  /* Escala tipográfica */
+  --text-xs:    11px;
+  --text-sm:    13px;
+  --text-base:  15px;
+  --text-md:    16px;
+  --text-lg:    18px;
+  --text-xl:    20px;
+  --text-2xl:   24px;
+  --text-3xl:   30px;
+
+  /* ── Espaciado (múltiplos de 4 px) ───────────────────── */
+  --sp-1:   4px;
+  --sp-2:   8px;
+  --sp-3:   12px;
+  --sp-4:   16px;
+  --sp-5:   20px;
+  --sp-6:   24px;
+  --sp-8:   32px;
+  --sp-10:  40px;
+  --sp-12:  48px;
+  --sp-16:  64px;
+
+  /* ── Bordes ──────────────────────────────────────────── */
+  --radius-sm:   4px;
+  --radius-md:   8px;
+  --radius-lg:   16px;
+  --radius-full: 9999px;
+  --border:      1px solid var(--color-border);
+
+  /* ── Sombras ─────────────────────────────────────────── */
+  --shadow-sm:  0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-md:  0 4px 12px rgba(0, 0, 0, 0.10);
+  --shadow-lg:  0 8px 24px rgba(0, 0, 0, 0.12);
+
+  /* ── Layout ──────────────────────────────────────────── */
+  --max-width:     1280px;
+  --header-height: 68px;
+
+  /* ── Transiciones ────────────────────────────────────── */
+  --transition:  150ms ease;
+
+  /* ── Z-index ─────────────────────────────────────────── */
+  --z-header:  100;
+  --z-modal:   200;
+  --z-toast:   300;
+}

@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Controles Nómina — Hidalgo &amp; Asociados</title>
+  <meta name="description" content="Herramienta interna de validación de nóminas. Datos procesados 100% en el navegador.">
+  <meta name="robots" content="noindex, nofollow">
+
+  <!-- Tipografía H&A -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Source+Sans+Pro:wght@300;400;600;700&display=swap" rel="stylesheet">
+
+  <!-- SheetJS para parsing de Excel -->
+  <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+
+  <!-- Dexie.js para IndexedDB -->
+  <script src="https://unpkg.com/dexie@4/dist/dexie.min.js"></script>
+
+  <!-- Estilos -->
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+</head>
+<body>
+
+  <!-- ── Header ──────────────────────────────────────────────── -->
+  <header class="app-header">
+    <a href="#" class="app-header__logo" id="js-home-link" title="Ir al inicio">
+      <!--
+        Logo con fallback: si la URL no carga (offline o red bloqueada),
+        el onerror reemplaza la imagen con el isotipo CSS equivalente.
+      -->
+      <img
+        src="https://hidalgoyasociados.com.ar/wp-content/uploads/2023/10/ha-iso.png"
+        alt="Hidalgo &amp; Asociados"
+        width="44"
+        height="44"
+        class="app-header__iso-img"
+        onerror="this.outerHTML='<div class=&quot;app-header__iso&quot;>H&amp;A</div>'">
+      <span class="app-header__wordmark">Hidalgo &amp; Asociados</span>
+    </a>
+
+    <span class="app-header__app-name">Controles Nómina</span>
+
+    <!-- Navegación contextual — poblada por JS -->
+    <nav class="app-header__nav" id="js-header-nav" aria-label="Navegación principal"></nav>
+  </header>
+
+  <!-- ── Aviso de privacidad ─────────────────────────────────── -->
+  <!--
+    Banner obligatorio per CLAUDE.md §5 y hya-brand SKILL §5.7.
+    Permanece visible hasta que el usuario lo cierra (sesión actual).
+  -->
+  <div class="privacy-banner" id="js-privacy-banner" role="alert">
+    <div class="privacy-banner__icon" aria-hidden="true">⚠</div>
+    <div class="privacy-banner__text">
+      <strong>Aviso de privacidad:</strong>
+      Esta herramienta procesa los datos 100&nbsp;% en tu navegador &mdash; nada se sube a internet.
+      Aun así, <strong>no compartas información personal identificable de empleados o clientes</strong>
+      fuera de los canales autorizados por H&amp;A.
+      Usá esta herramienta solo en equipos corporativos.
+    </div>
+    <button class="privacy-banner__close" id="js-banner-close" aria-label="Cerrar aviso de privacidad">
+      ✕
+    </button>
+  </div>
+
+  <!-- ── Contenido principal — renderizado por JS ────────────── -->
+  <main class="app-main" id="js-app-root">
+    <!-- Estado inicial: spinner de carga -->
+    <div class="page-content">
+      <div class="loading-screen">
+        <div class="spinner"></div>
+        <p class="text-muted">Iniciando la aplicación&hellip;</p>
+      </div>
+    </div>
+  </main>
+
+  <!-- ── Footer ──────────────────────────────────────────────── -->
+  <footer class="app-footer">
+    <div class="app-footer__logo">
+      <div class="app-footer__iso">H&amp;A</div>
+      <span class="app-footer__wordmark">Hidalgo &amp; Asociados</span>
+    </div>
+    <div class="app-footer__offices">
+      <div>
+        <strong class="app-footer__office-name">Pacheco de Melo</strong>
+        Pacheco de Melo 1833, Piso 6°<br>
+        C1126AAA &mdash; C.A.B.A.
+      </div>
+      <div>
+        <strong class="app-footer__office-name">Tucumán</strong>
+        Tucumán 829, Piso 1° y 5°<br>
+        C1049AAQ &mdash; C.A.B.A.
+      </div>
+      <div>
+        <strong class="app-footer__office-name">Neuquén</strong>
+        Fotheringham 478<br>
+        Neuquén Capital
+      </div>
+      <div>
+        <strong class="app-footer__office-name">Contacto</strong>
+        info_ar@bhidalgo.com.ar<br>
+        +54 11 2284 2031
+      </div>
+    </div>
+    <div class="app-footer__legal">
+      Hidalgo &amp; Asociados &copy; 1987&ndash;2026. Todos los derechos reservados.
+      &mdash;
+      <a href="https://hidalgoyasociados.com.ar" target="_blank" rel="noopener noreferrer">
+        hidalgoyasociados.com.ar
+      </a>
+      &nbsp;&middot;&nbsp; Controles Nómina v1.0 (MVP)
+      &nbsp;&middot;&nbsp; Uso interno — datos procesados en el navegador.
+    </div>
+  </footer>
+
+  <!-- ── Bootstrap de la app ─────────────────────────────────── -->
+  <script type="module" src="js/main.js"></script>
+
+</body>
+</html>
