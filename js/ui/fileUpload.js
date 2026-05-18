@@ -1,8 +1,4 @@
 // fileUpload.js — Pantalla de carga de un archivo Excel con mapeo de columnas
-//
-// Un "mapeo" es decirle a la app: "la columna que se llama 'Nro Legajo'
-// en este Excel es el campo 'legajo' que la app necesita".
-// La primera vez hay que hacerlo a mano; después se guarda automáticamente.
 
 import { isValidExcelFile, readFileAsArrayBuffer } from '../utils/validators.js';
 import { detectHeaders, parseNominaMaestra } from '../parsers/nominaMaestra.js';
@@ -10,55 +6,56 @@ import { parseResumenLargo } from '../parsers/resumenLargoExcel.js';
 import { parseResumenTabulado } from '../parsers/resumenTabuladoHorizontalExcel.js';
 import { getFileProfile, saveFileProfile } from '../db.js';
 
-// Campos requeridos por tipo de archivo (para el formulario de mapeo)
+// Campos "estándar" por tipo de archivo.
+// Los campos de nombre (apellido/nombre/nombreCompleto) se manejan aparte
+// con un selector especial porque pueden venir en 1 o 2 columnas.
 const FIELD_DEFS = {
   nomina_maestra: [
-    { key: 'legajoColumn',          label: 'Columna de Legajo',                 required: true  },
-    { key: 'apellidoColumn',         label: 'Columna de Apellido',               required: false },
-    { key: 'nombreColumn',           label: 'Columna de Nombre',                 required: false },
-    { key: 'conceptColumnsStartAt',  label: 'Primera columna de conceptos',      required: true  },
+    { key: 'legajoColumn',         label: 'Columna de Legajo',                required: true  },
+    { key: 'conceptColumnsStartAt', label: 'Primera columna de conceptos',     required: true  },
   ],
   resumen_largo_excel: [
-    { key: 'legajoColumnLong',   label: 'Columna de Legajo',            required: true },
-    { key: 'conceptCodeColumn',  label: 'Columna de Código de concepto', required: true },
-    { key: 'importColumn',       label: 'Columna de Importe',            required: true },
+    { key: 'legajoColumnLong',  label: 'Columna de Legajo',             required: true },
+    { key: 'conceptCodeColumn', label: 'Columna de Código de concepto',  required: true },
+    { key: 'importColumn',      label: 'Columna de Importe',             required: true },
   ],
   resumen_tabulado_horizontal: [
     { key: 'legajoColumn',          label: 'Columna de Legajo',           required: true  },
-    { key: 'apellidoColumn',         label: 'Columna de Apellido',         required: false },
-    { key: 'nombreColumn',           label: 'Columna de Nombre',           required: false },
-    { key: 'conceptColumnsStartAt',  label: 'Primera columna de conceptos', required: true  },
+    { key: 'conceptColumnsStartAt', label: 'Primera columna de conceptos', required: true  },
   ],
 };
 
+// Tipos que soportan mapeo de nombre (horizontal: una fila por empleado)
+const TIPOS_CON_NOMBRE = ['nomina_maestra', 'resumen_tabulado_horizontal'];
+
 /**
- * Inicializa el paso de carga de archivo.
+ * Inicializa el paso de carga de archivo dentro de un contenedor.
  *
- * @param {HTMLElement} container  - El div donde se renderiza este paso
- * @param {object}      opts
- * @param {number}      opts.clientId  - ID del cliente (para buscar/guardar el perfil)
- * @param {string}      opts.fileType  - Tipo de archivo ('nomina_maestra', etc.)
- * @param {object|null} opts.existingData - Si ya se cargó antes en esta sesión, mostrarlo
- * @param {function}    opts.onComplete   - Se llama con los datos parseados cuando el usuario confirma
+ * @param {HTMLElement} container
+ * @param {object} opts
+ *   clientId     {number}         - ID del cliente (para buscar/guardar perfil)
+ *   fileType     {string}         - Tipo de archivo
+ *   existingData {object|null}    - Datos ya cargados en esta sesión (null = primera vez)
+ *   onComplete   {function(data)} - Se llama cuando el archivo está parseado y listo
  */
 export async function initFileUploadStep(container, { clientId, fileType, existingData, onComplete }) {
-  // Si ya hay datos cargados, mostrar resumen con opción de reemplazar
   if (existingData) {
-    renderAlreadyLoaded(container, existingData, () => {
-      initFileUploadStep(container, { clientId, fileType, existingData: null, onComplete });
-    }, onComplete);
+    renderAlreadyLoaded(container, existingData,
+      () => initFileUploadStep(container, { clientId, fileType, existingData: null, onComplete }),
+      onComplete
+    );
     return;
   }
 
   renderDropZone(container, fileType, async (file) => {
-    // El usuario eligió un archivo — comenzamos el proceso
-    renderLoading(container, 'Leyendo archivo...');
+    renderLoading(container, 'Leyendo archivo…');
 
     let arrayBuffer;
     try {
       arrayBuffer = await readFileAsArrayBuffer(file);
     } catch (err) {
-      renderError(container, err.message, () => initFileUploadStep(container, { clientId, fileType, existingData, onComplete }));
+      renderError(container, err.message,
+        () => initFileUploadStep(container, { clientId, fileType, existingData, onComplete }));
       return;
     }
 
@@ -66,39 +63,57 @@ export async function initFileUploadStep(container, { clientId, fileType, existi
     try {
       ({ headers, preview } = detectHeaders(arrayBuffer));
     } catch (err) {
-      renderError(container, `No se pudo leer el Excel: ${err.message}`, () => initFileUploadStep(container, { clientId, fileType, existingData, onComplete }));
+      renderError(container, `No se pudo leer el Excel: ${err.message}`,
+        () => initFileUploadStep(container, { clientId, fileType, existingData, onComplete }));
       return;
     }
 
-    // Buscamos si ya hay un perfil guardado para este cliente + tipo de archivo
     const savedProfile = await getFileProfile(clientId, fileType);
-    const savedMapping = savedProfile?.mapping || null;
+    const savedMapping  = savedProfile?.mapping || null;
 
     renderMappingForm(container, {
-      headers,
-      preview,
-      fileType,
-      savedMapping,
+      headers, preview, fileType, savedMapping,
       fileName: file.name,
       onConfirm: async (mapping) => {
-        renderLoading(container, 'Procesando archivo...');
+        renderLoading(container, 'Procesando archivo…');
         try {
           const result = parseFile(arrayBuffer, fileType, mapping);
-          // Guardamos el perfil para no tener que mapear de nuevo
           await saveFileProfile(clientId, fileType, mapping);
-          onComplete({ ...result, mapping, fileName: file.name, fileType });
+
+          const data = { ...result, mapping, fileName: file.name, fileType };
+
+          // ✅ FIX: mostrar estado de éxito (antes se quedaba el spinner para siempre)
+          renderAlreadyLoaded(
+            container,
+            data,
+            () => initFileUploadStep(container, { clientId, fileType, existingData: null, onComplete }),
+            onComplete
+          );
+
+          // Avisarle al wizard que el archivo está listo
+          onComplete(data);
+
         } catch (err) {
-          renderError(container, err.message, () =>
-            renderMappingForm(container, { headers, preview, fileType, savedMapping: mapping, fileName: file.name, onConfirm: async (m) => {
-              renderLoading(container, 'Procesando archivo...');
-              try {
-                const result = parseFile(arrayBuffer, fileType, m);
-                await saveFileProfile(clientId, fileType, m);
-                onComplete({ ...result, mapping: m, fileName: file.name, fileType });
-              } catch (e2) {
-                renderError(container, e2.message, () => initFileUploadStep(container, { clientId, fileType, existingData, onComplete }));
-              }
-            }})
+          renderError(container, `Error al procesar: ${err.message}`,
+            () => renderMappingForm(container, {
+              headers, preview, fileType, savedMapping, fileName: file.name,
+              onConfirm: async (m) => {
+                renderLoading(container, 'Procesando archivo…');
+                try {
+                  const result = parseFile(arrayBuffer, fileType, m);
+                  await saveFileProfile(clientId, fileType, m);
+                  const data = { ...result, mapping: m, fileName: file.name, fileType };
+                  renderAlreadyLoaded(container, data,
+                    () => initFileUploadStep(container, { clientId, fileType, existingData: null, onComplete }),
+                    onComplete);
+                  onComplete(data);
+                } catch (e2) {
+                  renderError(container, e2.message,
+                    () => initFileUploadStep(container, { clientId, fileType, existingData, onComplete }));
+                }
+              },
+              onCancel: () => initFileUploadStep(container, { clientId, fileType, existingData, onComplete }),
+            })
           );
         }
       },
@@ -110,18 +125,17 @@ export async function initFileUploadStep(container, { clientId, fileType, existi
 // ── Renders internos ──────────────────────────────────────────────────────────
 
 function renderDropZone(container, fileType, onFile) {
-  const label = fileTypeLabel(fileType);
   container.innerHTML = `
     <div class="file-drop" id="js-drop-zone">
       <div class="file-drop__icon">📂</div>
       <div class="file-drop__text">
         <strong>Arrastrá el Excel acá</strong> o hacé clic para elegir<br>
-        <small>${label} (.xlsx)</small>
+        <small>${fileTypeLabel(fileType)} (.xlsx)</small>
       </div>
       <input type="file" accept=".xlsx,.xls" style="display:none" id="js-file-input">
     </div>
     <p class="text-sm text-muted" style="margin-top:var(--sp-3);text-align:center;">
-      Solo se abre en tu navegador. No se envía a ningún servidor.
+      Los datos se procesan en tu navegador — no se envían a ningún servidor.
     </p>
   `;
 
@@ -148,7 +162,8 @@ function renderDropZone(container, fileType, onFile) {
 
 function handleFile(file, onFile, container, fileType) {
   if (!isValidExcelFile(file)) {
-    renderError(container, `El archivo "${file.name}" no es un Excel (.xlsx). Elegí un archivo Excel.`,
+    renderError(container,
+      `"${file.name}" no es un Excel (.xlsx). Elegí un archivo Excel.`,
       () => renderDropZone(container, fileType, onFile));
     return;
   }
@@ -166,9 +181,7 @@ function renderLoading(container, msg) {
 
 function renderError(container, msg, onRetry) {
   container.innerHTML = `
-    <div class="alert alert--danger" style="margin-bottom:var(--sp-4);">
-      ⚠️ ${msg}
-    </div>
+    <div class="alert alert--danger" style="margin-bottom:var(--sp-4);">⚠️ ${escHtml(msg)}</div>
     <button class="btn btn--secondary" id="js-retry-btn">← Volver a intentar</button>
   `;
   container.querySelector('#js-retry-btn').addEventListener('click', onRetry);
@@ -176,11 +189,18 @@ function renderError(container, msg, onRetry) {
 
 function renderAlreadyLoaded(container, existingData, onReplace, onComplete) {
   const { fileName, parseMetadata } = existingData;
+  const warns = parseMetadata?.warnings?.length
+    ? `<span class="badge badge--warning" style="margin-left:var(--sp-2);">${parseMetadata.warnings.length} aviso(s)</span>` : '';
+
   container.innerHTML = `
-    <div class="alert alert--info" style="margin-bottom:var(--sp-4);">
-      ✅ <strong>${escHtml(fileName)}</strong> ya está cargado:
-      ${parseMetadata.uniqueLegajos} legajos · ${parseMetadata.detectedConcepts.length} conceptos
-      ${parseMetadata.warnings.length ? `· <span class="text-warning">${parseMetadata.warnings.length} aviso(s)</span>` : ''}
+    <div class="alert alert--success" style="margin-bottom:var(--sp-4);">
+      ✅ <strong>${escHtml(fileName)}</strong> — procesado correctamente
+      <br>
+      <span class="text-sm">
+        ${parseMetadata?.uniqueLegajos ?? 0} legajos ·
+        ${parseMetadata?.detectedConcepts?.length ?? 0} conceptos
+        ${warns}
+      </span>
     </div>
     <div style="display:flex;gap:var(--sp-3);">
       <button class="btn btn--primary" id="js-keep-btn">✓ Usar este archivo</button>
@@ -192,33 +212,24 @@ function renderAlreadyLoaded(container, existingData, onReplace, onComplete) {
 }
 
 function renderMappingForm(container, { headers, preview, fileType, savedMapping, fileName, onConfirm, onCancel }) {
-  const fields = FIELD_DEFS[fileType] || [];
-  const options = ['', ...headers].map(h => `<option value="${escHtml(h)}">${escHtml(h) || '— Seleccioná —'}</option>`).join('');
+  const fields   = FIELD_DEFS[fileType] || [];
+  const conNombre = TIPOS_CON_NOMBRE.includes(fileType);
 
-  const fieldRows = fields.map(f => {
-    const currentVal = savedMapping?.[f.key] || '';
-    const opts = ['', ...headers].map(h =>
-      `<option value="${escHtml(h)}" ${h === currentVal ? 'selected' : ''}>${escHtml(h) || '— Seleccioná —'}</option>`
-    ).join('');
-    return `
-      <div class="form-group">
-        <label class="form-label ${f.required ? 'form-label--required' : ''}">${f.label}</label>
-        <select class="form-select" name="${f.key}">${opts}</select>
-        ${!f.required ? '<p class="form-hint">Opcional</p>' : ''}
-      </div>
-    `;
-  }).join('');
+  // Detectar el modo de nombre guardado previamente
+  let savedNombreMode = 'junto'; // 'junto' = una columna, 'separado' = dos columnas
+  if (savedMapping?.apellidoColumn || savedMapping?.nombreColumn) savedNombreMode = 'separado';
+  if (savedMapping?.nombreApellidoColumn) savedNombreMode = 'junto';
 
-  // Preview de las primeras filas para ayudar a identificar las columnas
-  const previewHtml = preview.length ? `
+  // Preview de las primeras filas
+  const previewHtml = preview?.length ? `
     <div style="margin-bottom:var(--sp-5);overflow-x:auto;">
       <p class="text-sm text-muted" style="margin-bottom:var(--sp-2);">
-        Vista previa — primeras filas del archivo:
+        Vista previa — primeras filas del archivo (para que puedas identificar las columnas):
       </p>
       <table class="data-table data-table--compact">
         <thead><tr>${headers.map(h => `<th>${escHtml(h)}</th>`).join('')}</tr></thead>
         <tbody>
-          ${preview.slice(0,3).map(row =>
+          ${(preview || []).slice(0, 3).map(row =>
             `<tr>${headers.map((_, i) => `<td>${escHtml(String(row[i] ?? ''))}</td>`).join('')}</tr>`
           ).join('')}
         </tbody>
@@ -226,41 +237,141 @@ function renderMappingForm(container, { headers, preview, fileType, savedMapping
     </div>
   ` : '';
 
+  // Construir opciones del selector de columnas
+  const opts = (selected = '') => ['', ...headers]
+    .map(h => `<option value="${escHtml(h)}" ${h === selected ? 'selected' : ''}>${escHtml(h) || '— Seleccioná —'}</option>`)
+    .join('');
+
+  // Campos estándar (legajo, conceptos, importe, etc.)
+  const stdFieldsHtml = fields.map(f => `
+    <div class="form-group">
+      <label class="form-label ${f.required ? 'form-label--required' : ''}">${f.label}</label>
+      <select class="form-select" name="${f.key}" style="max-width:360px;">
+        ${opts(savedMapping?.[f.key] || '')}
+      </select>
+    </div>
+  `).join('');
+
+  // Sección especial de nombre (solo para formatos tabulados)
+  const nombreHtml = conNombre ? `
+    <div class="form-group" style="margin-top:var(--sp-2);">
+      <label class="form-label">Apellido y nombre del empleado</label>
+      <p class="form-hint" style="margin-bottom:var(--sp-3);">
+        ¿Cómo aparecen en el archivo?
+      </p>
+      <div style="display:flex;flex-direction:column;gap:var(--sp-2);margin-bottom:var(--sp-4);">
+        <label style="display:flex;align-items:center;gap:var(--sp-2);cursor:pointer;">
+          <input type="radio" name="nombre_mode" value="junto"
+            ${savedNombreMode === 'junto' ? 'checked' : ''}>
+          <span>En <strong>una sola columna</strong> (ej: "García Juan" o "GARCIA, JUAN")</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:var(--sp-2);cursor:pointer;">
+          <input type="radio" name="nombre_mode" value="separado"
+            ${savedNombreMode === 'separado' ? 'checked' : ''}>
+          <span>En <strong>columnas separadas</strong> (una para apellido, otra para nombre)</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:var(--sp-2);cursor:pointer;">
+          <input type="radio" name="nombre_mode" value="ninguno">
+          <span>No hay columna de nombre en este archivo</span>
+        </label>
+      </div>
+
+      <!-- Modo: una sola columna -->
+      <div id="js-nombre-junto" style="display:${savedNombreMode === 'junto' ? 'block' : 'none'};">
+        <label class="form-label">Columna con el nombre completo</label>
+        <select class="form-select" name="nombreApellidoColumn" style="max-width:360px;">
+          ${opts(savedMapping?.nombreApellidoColumn || '')}
+        </select>
+      </div>
+
+      <!-- Modo: columnas separadas -->
+      <div id="js-nombre-separado" style="display:${savedNombreMode === 'separado' ? 'block' : 'none'};">
+        <div class="form-group">
+          <label class="form-label">Columna de Apellido</label>
+          <select class="form-select" name="apellidoColumn" style="max-width:360px;">
+            ${opts(savedMapping?.apellidoColumn || '')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Columna de Nombre</label>
+          <select class="form-select" name="nombreColumn" style="max-width:360px;">
+            ${opts(savedMapping?.nombreColumn || '')}
+          </select>
+        </div>
+      </div>
+    </div>
+  ` : '';
+
   const hasSaved = savedMapping && Object.keys(savedMapping).length > 0;
 
   container.innerHTML = `
     <div class="alert alert--info" style="margin-bottom:var(--sp-4);">
-      📄 <strong>${escHtml(fileName)}</strong>
-      — Se detectaron <strong>${headers.length}</strong> columnas.
-      ${hasSaved ? '💾 Se pre-completó con el perfil guardado.' : 'Es la primera vez: indicá qué columna es qué campo.'}
+      📄 <strong>${escHtml(fileName)}</strong> — ${headers.length} columnas detectadas.
+      ${hasSaved
+        ? '💾 Se pre-completó con el perfil guardado — verificá que siga siendo correcto.'
+        : 'Primera vez: indicá qué columna corresponde a cada campo.'}
     </div>
     ${previewHtml}
     <form id="js-mapping-form">
-      ${fieldRows}
-      <div style="display:flex;gap:var(--sp-3);margin-top:var(--sp-4);">
+      ${stdFieldsHtml}
+      ${nombreHtml}
+      <div style="display:flex;gap:var(--sp-3);margin-top:var(--sp-5);">
         <button type="submit" class="btn btn--primary">✓ Confirmar y procesar</button>
         <button type="button" class="btn btn--ghost" id="js-cancel-mapping">← Cancelar</button>
       </div>
     </form>
   `;
 
+  // Toggle para mostrar/ocultar las secciones de nombre
+  if (conNombre) {
+    const junto    = container.querySelector('#js-nombre-junto');
+    const separado = container.querySelector('#js-nombre-separado');
+    container.querySelectorAll('[name="nombre_mode"]').forEach(radio => {
+      radio.addEventListener('change', () => {
+        junto.style.display    = radio.value === 'junto'    ? 'block' : 'none';
+        separado.style.display = radio.value === 'separado' ? 'block' : 'none';
+      });
+    });
+  }
+
+  // Submit del formulario de mapeo
   container.querySelector('#js-mapping-form').addEventListener('submit', (e) => {
     e.preventDefault();
-    const form = e.target;
+    const form    = e.target;
     const mapping = {};
+
+    // Campos estándar
     fields.forEach(f => {
-      const val = form.querySelector(`[name="${f.key}"]`).value;
+      const val = form.querySelector(`[name="${f.key}"]`)?.value;
       if (val) mapping[f.key] = val;
     });
+
+    // Campos de nombre (según el modo elegido)
+    if (conNombre) {
+      const mode = form.querySelector('[name="nombre_mode"]:checked')?.value;
+      if (mode === 'junto') {
+        const val = form.querySelector('[name="nombreApellidoColumn"]')?.value;
+        if (val) mapping.nombreApellidoColumn = val;
+      } else if (mode === 'separado') {
+        const ap = form.querySelector('[name="apellidoColumn"]')?.value;
+        const nm = form.querySelector('[name="nombreColumn"]')?.value;
+        if (ap) mapping.apellidoColumn = ap;
+        if (nm) mapping.nombreColumn   = nm;
+      }
+    }
+
     // Validar campos requeridos
-    const missing = fields.filter(f => f.required && !mapping[f.key]).map(f => f.label);
-    if (missing.length) {
-      alert(`Falta completar: ${missing.join(', ')}`);
+    const faltantes = fields.filter(f => f.required && !mapping[f.key]).map(f => f.label);
+    if (faltantes.length) {
+      alert(`Falta completar: ${faltantes.join(', ')}`);
       return;
     }
+
     onConfirm(mapping);
   });
-  container.querySelector('#js-cancel-mapping').addEventListener('click', onCancel);
+
+  container.querySelector('#js-cancel-mapping')
+    .addEventListener('click', onCancel);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -284,8 +395,5 @@ function fileTypeLabel(fileType) {
 
 function escHtml(str) {
   return String(str ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }

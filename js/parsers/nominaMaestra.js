@@ -41,10 +41,11 @@ export function parseNominaMaestra(arrayBuffer, mapping) {
   const headers = (rawRows[0] || []).map(h => (h !== null ? String(h).trim() : ''));
   const dataRows = rawRows.slice(1);
 
-  const legajoIdx       = findColIdx(headers, mapping.legajoColumn);
-  const apellidoIdx     = mapping.apellidoColumn  ? findColIdx(headers, mapping.apellidoColumn)  : -1;
-  const nombreIdx       = mapping.nombreColumn    ? findColIdx(headers, mapping.nombreColumn)    : -1;
-  const conceptStartIdx = findColIdx(headers, mapping.conceptColumnsStartAt);
+  const legajoIdx          = findColIdx(headers, mapping.legajoColumn);
+  const apellidoIdx        = mapping.apellidoColumn        ? findColIdx(headers, mapping.apellidoColumn)        : -1;
+  const nombreIdx          = mapping.nombreColumn          ? findColIdx(headers, mapping.nombreColumn)          : -1;
+  const nombreCompletoIdx  = mapping.nombreApellidoColumn  ? findColIdx(headers, mapping.nombreApellidoColumn)  : -1;
+  const conceptStartIdx    = findColIdx(headers, mapping.conceptColumnsStartAt);
 
   if (legajoIdx === -1)       throw new Error(`No se encontró la columna de legajo: "${mapping.legajoColumn}".`);
   if (conceptStartIdx === -1) throw new Error(`No se encontró la columna de inicio de conceptos: "${mapping.conceptColumnsStartAt}".`);
@@ -67,8 +68,14 @@ export function parseNominaMaestra(arrayBuffer, mapping) {
     }
 
     const entry = { legajo: String(rawLegajo).trim() };
-    if (apellidoIdx >= 0 && row[apellidoIdx] != null) entry.apellido = String(row[apellidoIdx]).trim();
-    if (nombreIdx   >= 0 && row[nombreIdx]   != null) entry.nombre   = String(row[nombreIdx]).trim();
+
+    if (nombreCompletoIdx >= 0 && row[nombreCompletoIdx] != null) {
+      // Nombre y apellido en una sola columna → lo guardamos en apellido para que se muestre solo
+      entry.apellido = String(row[nombreCompletoIdx]).trim();
+    } else {
+      if (apellidoIdx >= 0 && row[apellidoIdx] != null) entry.apellido = String(row[apellidoIdx]).trim();
+      if (nombreIdx   >= 0 && row[nombreIdx]   != null) entry.nombre   = String(row[nombreIdx]).trim();
+    }
 
     for (let c = 0; c < conceptHeaders.length; c++) {
       const code = conceptHeaders[c];
