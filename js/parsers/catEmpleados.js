@@ -15,6 +15,7 @@ const CAT_STD_COLS = {
   'CENTRO_COSTO': 'centroCostoColumn',
   'DEPARTAMENTO': 'departamentoColumn',
   'F. BAJA':      'fBajaColumn',
+  'F. ALTA':      'fAltaColumn',
   'APELLIDO_1':   'apellidoColumn',
   'NOMBRE':       'nombreColumn',
   'CUIL':         'cuilColumn',
