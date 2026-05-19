@@ -65,10 +65,22 @@ export function parseCatEmpleados(arrayBuffer, mapping) {
   const fBajaCol = mapping.fBajaColumn;
   if (!fBajaCol) throw new Error('No se configuró la columna de Fecha de Baja (F. BAJA).');
 
+  const idEmpCol = mapping.idEmpColumn;
+  if (!idEmpCol) throw new Error('No se configuró la columna de ID Empleado.');
+
   const activos   = [];
   const inactivos = [];
+  let   filtradas = 0; // filas sin ID numérico (sumatorias, encabezados de sección, etc.)
 
   for (const row of rawRows) {
+    // Excluir filas donde el ID no es un número válido (COUNTA, subtotales, separadores)
+    const rawId = row[idEmpCol];
+    const idStr = rawId != null ? String(rawId).trim() : '';
+    if (idStr === '' || isNaN(Number(idStr))) {
+      filtradas++;
+      continue;
+    }
+
     const baja = row[fBajaCol];
     const esActivo = baja === null || baja === undefined || String(baja).trim() === '';
     if (esActivo) {
@@ -84,6 +96,7 @@ export function parseCatEmpleados(arrayBuffer, mapping) {
       total:     rawRows.length,
       activos:   activos.length,
       inactivos: inactivos.length,
+      filtradas,
       parsedAt:  new Date().toISOString(),
     },
   };

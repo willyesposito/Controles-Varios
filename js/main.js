@@ -109,6 +109,31 @@ function updateHeaderNav(hash) {
   }
 }
 
+// ── Tema claro / oscuro ───────────────────────────────────────────────────────
+
+function initTheme() {
+  const stored = localStorage.getItem('theme');
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const isDark = stored === 'dark' || (!stored && prefersDark);
+  applyTheme(isDark, false);
+}
+
+function applyTheme(dark, save = true) {
+  document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+  const btn = document.getElementById('js-theme-toggle');
+  if (btn) btn.textContent = dark ? '☀️' : '🌙';
+  if (save) localStorage.setItem('theme', dark ? 'dark' : 'light');
+}
+
+function setupThemeToggle() {
+  const btn = document.getElementById('js-theme-toggle');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    applyTheme(!isDark);
+  });
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
   console.log(`[Controles Nómina] v${APP_VERSION} — iniciando`);
@@ -133,7 +158,9 @@ async function init() {
     return;
   }
 
+  initTheme();
   setupPrivacyBanner();
+  setupThemeToggle();
 
   // Escuchar cambios de URL (clicks en links con href="#/...")
   window.addEventListener('hashchange', handleRoute);

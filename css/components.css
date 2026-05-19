@@ -9,7 +9,7 @@
   border-left: 4px solid var(--color-primary);
   padding: var(--sp-3) var(--sp-10);
   font-size: var(--text-sm);
-  color: #4E342E;
+  color: var(--color-banner-text, #4E342E);
   position: relative;
 }
 .privacy-banner__icon {
@@ -71,7 +71,7 @@
 }
 
 .btn--secondary {
-  background: var(--color-white);
+  background: var(--color-surface);
   color: var(--color-primary);
   border-color: var(--color-primary);
 }
@@ -125,7 +125,7 @@
   font-weight: var(--fw-semibold);
   font-family: var(--font);
   border: 2px solid var(--color-border);
-  background: var(--color-white);
+  background: var(--color-surface);
   color: var(--color-wordmark);
   cursor: pointer;
   transition: all var(--transition);
@@ -170,7 +170,7 @@
 
 /* ── Card ────────────────────────────────────────────────────── */
 .card {
-  background: var(--color-white);
+  background: var(--color-surface);
   border: var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
@@ -228,10 +228,10 @@
   vertical-align: middle;
 }
 .data-table tbody tr.row--diff {
-  background: #FFF8E1;
+  background: var(--color-warning-bg);
 }
 .data-table tbody tr.row--diff:hover {
-  background: #FFF0C0;
+  background: var(--color-warning-bg-hover, #FFF0C0);
 }
 .data-table--compact tbody td,
 .data-table--compact thead th {
@@ -281,7 +281,7 @@
   height: 32px;
   border-radius: 50%;
   border: 2px solid var(--color-border);
-  background: var(--color-white);
+  background: var(--color-surface);
   color: var(--color-wordmark);
   display: flex;
   align-items: center;
@@ -346,7 +346,7 @@
   font-family: var(--font);
   font-size: var(--text-base);
   color: var(--color-black);
-  background: var(--color-white);
+  background: var(--color-surface);
   transition: border-color var(--transition), box-shadow var(--transition);
   line-height: 1.4;
 }
@@ -439,10 +439,10 @@
   pointer-events: auto;
   animation: slide-in 200ms ease;
 }
-.toast--success { background: var(--color-success-bg); border-left: 4px solid var(--color-success); color: #1B5E20; }
-.toast--danger  { background: var(--color-danger-bg);  border-left: 4px solid var(--color-danger);  color: #B71C1C; }
-.toast--warning { background: var(--color-warning-bg); border-left: 4px solid var(--color-warning); color: #E65100; }
-.toast--info    { background: var(--color-info-bg);    border-left: 4px solid var(--color-primary); color: #01579B; }
+.toast--success { background: var(--color-success-bg); border-left: 4px solid var(--color-success); color: var(--color-toast-success, #1B5E20); }
+.toast--danger  { background: var(--color-danger-bg);  border-left: 4px solid var(--color-danger);  color: var(--color-toast-danger,  #B71C1C); }
+.toast--warning { background: var(--color-warning-bg); border-left: 4px solid var(--color-warning); color: var(--color-toast-warning, #E65100); }
+.toast--info    { background: var(--color-info-bg);    border-left: 4px solid var(--color-primary); color: var(--color-toast-info,    #01579B); }
 @keyframes slide-in {
   from { transform: translateX(120%); opacity: 0; }
   to   { transform: translateX(0);    opacity: 1; }
@@ -460,7 +460,7 @@
   padding: var(--sp-6);
 }
 .modal {
-  background: var(--color-white);
+  background: var(--color-surface);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   max-width: 560px;
@@ -597,7 +597,7 @@
   width: 100%;
   max-width: 400px;
   height: 8px;
-  background: #E7E6E6;
+  background: var(--color-border);
   border-radius: 99px;
   overflow: hidden;
   margin: var(--sp-4) auto 0;
@@ -615,6 +615,34 @@
 @keyframes progress-slide {
   0%   { margin-left: -40%; }
   100% { margin-left: 100%; }
+}
+
+/* ── Dark mode: colores literales que necesitan override ─────── */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-banner-text:    #D7B896;
+    --color-toast-success:  #A5D6A7;
+    --color-toast-danger:   #EF9A9A;
+    --color-toast-warning:  #FFCC80;
+    --color-toast-info:     #81D4FA;
+    --color-warning-bg-hover: #3B2600;
+  }
+}
+[data-theme="dark"] {
+  --color-banner-text:    #D7B896;
+  --color-toast-success:  #A5D6A7;
+  --color-toast-danger:   #EF9A9A;
+  --color-toast-warning:  #FFCC80;
+  --color-toast-info:     #81D4FA;
+  --color-warning-bg-hover: #3B2600;
+}
+[data-theme="light"] {
+  --color-banner-text:    #4E342E;
+  --color-toast-success:  #1B5E20;
+  --color-toast-danger:   #B71C1C;
+  --color-toast-warning:  #E65100;
+  --color-toast-info:     #01579B;
+  --color-warning-bg-hover: #FFF0C0;
 }
 
 /* ── Responsive básico ───────────────────────────────────────── */

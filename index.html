@@ -18,6 +18,16 @@
   <!-- Dexie.js para IndexedDB -->
   <script src="https://unpkg.com/dexie@4/dist/dexie.min.js"></script>
 
+  <!-- Tema: aplicado antes del primer paint para evitar flash blanco/negro -->
+  <script>
+    (function() {
+      var stored = localStorage.getItem('theme');
+      var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      var isDark = stored === 'dark' || (!stored && prefersDark);
+      document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+    })();
+  </script>
+
   <!-- Estilos -->
   <link rel="stylesheet" href="css/tokens.css">
   <link rel="stylesheet" href="css/base.css">
@@ -46,6 +56,16 @@
 
     <!-- Navegación contextual — poblada por JS -->
     <nav class="app-header__nav" id="js-header-nav" aria-label="Navegación principal"></nav>
+
+    <!-- Toggle de tema claro/oscuro -->
+    <button
+      id="js-theme-toggle"
+      class="btn btn--ghost btn--sm"
+      aria-label="Cambiar entre modo claro y oscuro"
+      title="Modo claro / oscuro"
+      style="font-size:18px;padding:var(--sp-1) var(--sp-2);line-height:1;">
+      🌙
+    </button>
   </header>
 
   <!-- ── Aviso de privacidad ─────────────────────────────────── -->
