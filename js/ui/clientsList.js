@@ -58,6 +58,10 @@ async function reloadList(root) {
   clients.forEach(client => {
     const card = container.querySelector(`[data-client-id="${client.id}"]`);
 
+    card.querySelector('.js-controls-btn').addEventListener('click', () => {
+      window.location.hash = `#/controls/${client.id}`;
+    });
+
     card.querySelector('.js-run-btn').addEventListener('click', () => {
       window.location.hash = `#/wizard/${client.id}`;
     });
@@ -92,7 +96,8 @@ function renderClientCard(client) {
       </div>
       ${client.notes ? `<div class="card__body" style="padding:var(--sp-3) var(--sp-6);font-size:var(--text-sm);color:var(--color-wordmark);">${escHtml(client.notes)}</div>` : ''}
       <div class="card__footer" style="justify-content:flex-start;gap:var(--sp-2);">
-        <button class="btn btn--primary btn--sm js-run-btn">▶ Nueva validación</button>
+        <button class="btn btn--primary btn--sm js-controls-btn">📋 Controles</button>
+        <button class="btn btn--secondary btn--sm js-run-btn">▶ Cruce nómina</button>
         <button class="btn btn--secondary btn--sm js-groupers-btn">⚙ Agrupadores</button>
         <button class="btn btn--ghost btn--sm js-delete-btn" style="margin-left:auto;">🗑 Borrar</button>
       </div>

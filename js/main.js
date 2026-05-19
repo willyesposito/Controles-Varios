@@ -11,10 +11,12 @@
 //   #/wizard/:clientId      → wizard de validación
 //   #/results/:sessionId    → pantalla de resultados
 
-import { renderClientsList } from './ui/clientsList.js';
-import { renderGrouperEditor } from './ui/grouperEditor.js';
-import { renderWizard }        from './ui/wizard.js';
-import { renderResultsView }   from './ui/resultsView.js';
+import { renderClientsList }    from './ui/clientsList.js';
+import { renderGrouperEditor }  from './ui/grouperEditor.js';
+import { renderWizard }         from './ui/wizard.js';
+import { renderResultsView }    from './ui/resultsView.js';
+import { renderControlsWizard } from './ui/controlsWizard.js';
+import { renderControlsResults } from './ui/controlsResults.js';
 
 const APP_VERSION = '1.0.0-alpha';
 const root = document.getElementById('js-app-root');
@@ -71,6 +73,12 @@ async function handleRoute() {
     } else if (parts[0] === 'results' && parts[1]) {
       // #/results/:sessionId → resultados
       await renderResultsView(root, Number(parts[1]));
+    } else if (parts[0] === 'controls' && parts[1]) {
+      // #/controls/:clientId → wizard de controles
+      await renderControlsWizard(root, Number(parts[1]));
+    } else if (parts[0] === 'control-results' && parts[1]) {
+      // #/control-results/:runId → resultados de controles
+      await renderControlsResults(root, Number(parts[1]));
     } else {
       // Ruta desconocida → volvemos al inicio
       window.location.hash = '#/';

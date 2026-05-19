@@ -4,6 +4,8 @@ import { isValidExcelFile, readFileAsArrayBuffer } from '../utils/validators.js'
 import { detectHeaders, parseNominaMaestra } from '../parsers/nominaMaestra.js';
 import { parseResumenLargo } from '../parsers/resumenLargoExcel.js';
 import { parseResumenTabulado } from '../parsers/resumenTabuladoHorizontalExcel.js';
+import { parseTabuladoControl } from '../parsers/tabuladoControl.js';
+import { parseCatEmpleados } from '../parsers/catEmpleados.js';
 import { getFileProfile, saveFileProfile } from '../db.js';
 
 // Campos "estándar" por tipo de archivo.
@@ -23,6 +25,27 @@ const FIELD_DEFS = {
     { key: 'legajoColumn',          label: 'Columna de Legajo',           required: true  },
     { key: 'conceptColumnsStartAt', label: 'Primera columna de conceptos', required: true  },
   ],
+  tab_control: [
+    { key: 'empleadoColumn',        label: 'Columna de Empleado (ID)',           required: true  },
+    { key: 'apellidoNombreColumn',  label: 'Columna de Apellido y Nombre',       required: false },
+    { key: 'puestoColumn',          label: 'Columna de Puesto',                  required: false },
+    { key: 'idCCColumn',            label: 'Columna de ID Centro de Costo',      required: false },
+    { key: 'ccColumn',              label: 'Columna de Centro de Costo',         required: false },
+    { key: 'deptoColumn',           label: 'Columna de Departamento/Unidad',     required: false },
+    { key: 'cuilColumn',            label: 'Columna de CUIL',                    required: false },
+  ],
+  cat_empleados: [
+    { key: 'idEmpColumn',           label: 'Columna de ID Empleado',             required: true  },
+    { key: 'puestoColumn',          label: 'Columna de Puesto',                  required: true  },
+    { key: 'idCenColumn',           label: 'Columna de ID Centro de Costo',      required: true  },
+    { key: 'centroCostoColumn',     label: 'Columna de Centro de Costo',         required: true  },
+    { key: 'departamentoColumn',    label: 'Columna de Departamento',            required: true  },
+    { key: 'fBajaColumn',           label: 'Columna de Fecha de Baja (F. BAJA)', required: true  },
+    { key: 'apellidoColumn',        label: 'Columna de Apellido',                required: false },
+    { key: 'nombreColumn',          label: 'Columna de Nombre',                  required: false },
+    { key: 'cuilColumn',            label: 'Columna de CUIL',                    required: false },
+    { key: 'idPueColumn',           label: 'Columna de ID Puesto',               required: false },
+  ],
 };
 
 // Tipos que soportan mapeo de nombre (horizontal: una fila por empleado)
@@ -38,7 +61,7 @@ const TIPOS_CON_NOMBRE = ['nomina_maestra', 'resumen_tabulado_horizontal'];
  *   existingData {object|null}    - Datos ya cargados en esta sesión (null = primera vez)
  *   onComplete   {function(data)} - Se llama cuando el archivo está parseado y listo
  */
-export async function initFileUploadStep(container, { clientId, fileType, existingData, onComplete }) {
+export async function initFileUploadStep(container, { clientId, fileType, existingData, onComplete, autoDetect }) {
   if (existingData) {
     renderAlreadyLoaded(container, existingData,
       () => initFileUploadStep(container, { clientId, fileType, existingData: null, onComplete }),
@@ -57,7 +80,7 @@ export async function initFileUploadStep(container, { clientId, fileType, existi
       });
     } catch (err) {
       renderError(container, err.message,
-        () => initFileUploadStep(container, { clientId, fileType, existingData, onComplete }));
+        () => initFileUploadStep(container, { clientId, fileType, existingData, onComplete, autoDetect }));
       return;
     }
 
@@ -68,15 +91,25 @@ export async function initFileUploadStep(container, { clientId, fileType, existi
       ({ headers, preview } = detectHeaders(arrayBuffer));
     } catch (err) {
       renderError(container, `No se pudo leer el Excel: ${err.message}`,
-        () => initFileUploadStep(container, { clientId, fileType, existingData, onComplete }));
+        () => initFileUploadStep(container, { clientId, fileType, existingData, onComplete, autoDetect }));
       return;
     }
 
     const savedProfile = await getFileProfile(clientId, fileType);
-    const savedMapping  = savedProfile?.mapping || null;
+    let savedMapping  = savedProfile?.mapping || null;
+    let autoDetected  = false;
+
+    // Auto-detección: si no hay perfil guardado y se pasó una función de detección, intentar
+    if (!savedMapping && autoDetect) {
+      const detected = autoDetect(headers);
+      if (detected) {
+        savedMapping  = detected;
+        autoDetected  = true;
+      }
+    }
 
     renderMappingForm(container, {
-      headers, preview, fileType, savedMapping,
+      headers, preview, fileType, savedMapping, autoDetected,
       fileName: file.name,
       onConfirm: async (mapping) => {
         renderLoadingProgress(container, 'parsing');
@@ -121,7 +154,7 @@ export async function initFileUploadStep(container, { clientId, fileType, existi
           );
         }
       },
-      onCancel: () => initFileUploadStep(container, { clientId, fileType, existingData, onComplete }),
+      onCancel: () => initFileUploadStep(container, { clientId, fileType, existingData, onComplete, autoDetect }),
     });
   });
 }
@@ -235,7 +268,7 @@ function renderAlreadyLoaded(container, existingData, onReplace, onComplete) {
   container.querySelector('#js-replace-btn').addEventListener('click', onReplace);
 }
 
-function renderMappingForm(container, { headers, preview, fileType, savedMapping, fileName, onConfirm, onCancel }) {
+function renderMappingForm(container, { headers, preview, fileType, savedMapping, autoDetected, fileName, onConfirm, onCancel }) {
   const fields   = FIELD_DEFS[fileType] || [];
   const conNombre = TIPOS_CON_NOMBRE.includes(fileType);
 
@@ -327,13 +360,14 @@ function renderMappingForm(container, { headers, preview, fileType, savedMapping
   ` : '';
 
   const hasSaved = savedMapping && Object.keys(savedMapping).length > 0;
+  const savedMsg = autoDetected
+    ? '🤖 Se detectaron las columnas automáticamente — verificá que sean correctas.'
+    : '💾 Se pre-completó con el perfil guardado — verificá que siga siendo correcto.';
 
   container.innerHTML = `
     <div class="alert alert--info" style="margin-bottom:var(--sp-4);">
       📄 <strong>${escHtml(fileName)}</strong> — ${headers.length} columnas detectadas.
-      ${hasSaved
-        ? '💾 Se pre-completó con el perfil guardado — verificá que siga siendo correcto.'
-        : 'Primera vez: indicá qué columna corresponde a cada campo.'}
+      ${hasSaved ? savedMsg : 'Primera vez: indicá qué columna corresponde a cada campo.'}
     </div>
     ${previewHtml}
     <form id="js-mapping-form">
@@ -405,6 +439,8 @@ function parseFile(arrayBuffer, fileType, mapping) {
     case 'nomina_maestra':              return parseNominaMaestra(arrayBuffer, mapping);
     case 'resumen_largo_excel':         return parseResumenLargo(arrayBuffer, mapping);
     case 'resumen_tabulado_horizontal': return parseResumenTabulado(arrayBuffer, mapping);
+    case 'tab_control':                 return parseTabuladoControl(arrayBuffer, mapping);
+    case 'cat_empleados':               return parseCatEmpleados(arrayBuffer, mapping);
     default: throw new Error(`Tipo de archivo desconocido: "${fileType}".`);
   }
 }
@@ -414,6 +450,8 @@ function fileTypeLabel(fileType) {
     nomina_maestra:              'Nómina Maestra',
     resumen_largo_excel:         'Resumen Largo Excel',
     resumen_tabulado_horizontal: 'Resumen Tabulado Horizontal',
+    tab_control:                 'Tabulado (Controles)',
+    cat_empleados:               'Catálogo de Empleados',
   }[fileType] || fileType;
 }
 
