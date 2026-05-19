@@ -124,7 +124,7 @@ export function renderCatXEmpleadosResults(results, container) {
     'cursor:pointer', 'list-style:none', 'display:flex', 'align-items:center',
     'gap:var(--sp-2)', 'padding:var(--sp-2) 0', 'font-weight:600',
     'color:var(--color-primary)', 'font-size:var(--text-base)',
-    'border-bottom:1px solid #E7E6E6', 'margin-bottom:var(--sp-3)',
+    'border-bottom:1px solid var(--color-border)', 'margin-bottom:var(--sp-3)',
   ].join(';');
 
   // Envuelve contenido en un <details open> con título en el summary
