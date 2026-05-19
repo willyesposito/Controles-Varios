@@ -20,7 +20,7 @@ export function summarizeCatXEmpleados(results) {
   const sign = s.diff > 0 ? '+' : '';
   return {
     status: hasDiff ? 'warning' : 'success',
-    headline: `CAT activos: ${s.catActivos} · Tabulado: ${s.tabTotal} · Diferencia neta: ${sign}${s.diff}`,
+    headline: `EE x CATEG activos: ${s.catActivos} · Tabulado: ${s.tabTotal} · Diferencia neta: ${sign}${s.diff}`,
     insights: [
       {
         type:  s.missingInTabCount > 0 ? 'warning' : 'success',

@@ -6,6 +6,7 @@ import { parseResumenLargo } from '../parsers/resumenLargoExcel.js';
 import { parseResumenTabulado } from '../parsers/resumenTabuladoHorizontalExcel.js';
 import { parseTabuladoControl } from '../parsers/tabuladoControl.js';
 import { parseCatEmpleados } from '../parsers/catEmpleados.js';
+import { parseBrutos } from '../parsers/brutosParser.js';
 import { getFileProfile, saveFileProfile } from '../db.js';
 
 // Campos "estándar" por tipo de archivo.
@@ -46,6 +47,11 @@ const FIELD_DEFS = {
     { key: 'nombreColumn',          label: 'Columna de Nombre',                  required: false },
     { key: 'cuilColumn',            label: 'Columna de CUIL',                    required: false },
     { key: 'idPueColumn',           label: 'Columna de ID Puesto',               required: false },
+  ],
+  brutos_file: [
+    { key: 'legajoColumn',          label: 'Columna de Legajo',                  required: true  },
+    { key: 'salBaseColumn',         label: 'Columna de SAL_BASE',                required: false },
+    { key: 'aCuFutAumenColumn',     label: 'Columna de A_CTA_FUT_AUMEN',         required: false },
   ],
 };
 
@@ -255,8 +261,8 @@ function renderAlreadyLoaded(container, existingData, onReplace, onComplete) {
     const fil = parseMetadata?.filtradas ?? 0;
     metaLine = `${parseMetadata?.activos ?? 0} activos de ${parseMetadata?.total ?? 0} filas`
       + (fil > 0 ? ` &nbsp;·&nbsp; <span class="badge badge--warning">${fil} sumatorias excluidas</span>` : '');
-  } else if (fileType === 'tab_control') {
-    metaLine = `${parseMetadata?.totalRows ?? 0} empleados`;
+  } else if (fileType === 'tab_control' || fileType === 'brutos_file') {
+    metaLine = `${parseMetadata?.totalRows ?? 0} registros`;
   } else {
     metaLine = `${parseMetadata?.uniqueLegajos ?? 0} legajos · ${parseMetadata?.detectedConcepts?.length ?? 0} conceptos`;
   }
@@ -311,16 +317,21 @@ function renderMappingForm(container, { headers, preview, fileType, savedMapping
     .join('');
 
   // Campos estándar en grid horizontal para reducir el scroll vertical
+  // Un campo queda en amarillo si había un mapping (auto o guardado) pero ese campo quedó sin asignar.
   const stdFieldsHtml = fields.length === 0 ? '' : `
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:var(--sp-3) var(--sp-5);margin-bottom:var(--sp-5);">
-      ${fields.map(f => `
-        <div class="form-group" style="margin-bottom:0;">
-          <label class="form-label ${f.required ? 'form-label--required' : ''}">${f.label}</label>
-          <select class="form-select" name="${f.key}">
-            ${opts(savedMapping?.[f.key] || '')}
-          </select>
-        </div>
-      `).join('')}
+      ${fields.map(f => {
+        const val  = savedMapping?.[f.key] || '';
+        const warn = !!savedMapping && !val;
+        return `
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label ${f.required ? 'form-label--required' : ''}">${f.label}${warn ? ' <span style="color:#B45309;font-size:0.8em;">⚠ sin asignar</span>' : ''}</label>
+            <select class="form-select" name="${f.key}"${warn ? ' style="border-color:#EAB308;background:rgba(234,179,8,0.08);"' : ''}>
+              ${opts(val)}
+            </select>
+          </div>
+        `;
+      }).join('')}
     </div>
   `;
 
@@ -456,6 +467,7 @@ function parseFile(arrayBuffer, fileType, mapping) {
     case 'resumen_tabulado_horizontal': return parseResumenTabulado(arrayBuffer, mapping);
     case 'tab_control':                 return parseTabuladoControl(arrayBuffer, mapping);
     case 'cat_empleados':               return parseCatEmpleados(arrayBuffer, mapping);
+    case 'brutos_file':                 return parseBrutos(arrayBuffer, mapping);
     default: throw new Error(`Tipo de archivo desconocido: "${fileType}".`);
   }
 }
@@ -467,6 +479,7 @@ function fileTypeLabel(fileType) {
     resumen_tabulado_horizontal: 'Resumen Tabulado Horizontal',
     tab_control:                 'Tabulado (Controles)',
     cat_empleados:               'Catálogo de Empleados',
+    brutos_file:                 'Reporte de Brutos',
   }[fileType] || fileType;
 }
 

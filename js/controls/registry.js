@@ -20,6 +20,12 @@ import {
   summarizeCatXEmpleados,
 } from './catXEmpleados.js';
 
+import {
+  runBrutos,
+  renderBrutosResults,
+  summarizeBrutos,
+} from './brutos.js';
+
 export const CONTROL_REGISTRY = {
 
   cat_x_empleados: {
@@ -29,13 +35,25 @@ export const CONTROL_REGISTRY = {
       + 'valida activos, diferencias de cantidad, discrepancias de campo y distribución por puesto y centro de costo.',
     tabRequired: true,
     additionalFiles: [
-      { key: 'cat', label: 'Catálogo de Empleados', fileType: 'cat_empleados' },
+      { key: 'cat', label: 'Empleados por Categoría', fileType: 'cat_empleados' },
     ],
     run:           runCatXEmpleados,
     summarize:     summarizeCatXEmpleados,
     renderResults: renderCatXEmpleadosResults,
   },
 
-  // Próximos controles se agregan aquí
+  brutos: {
+    id:          'brutos',
+    label:       'Brutos',
+    description: 'Reporte de Brutos. Cruza SAL_BASE y A_CTA_FUT_AUMEN del Reporte de Brutos contra '
+      + 'los conceptos 1003 (SUELDO) y 1017 (A CTA FUT AUMEN) del Tabulado.',
+    tabRequired: true,
+    additionalFiles: [
+      { key: 'brutos', label: 'Reporte de Brutos', fileType: 'brutos_file' },
+    ],
+    run:           runBrutos,
+    summarize:     summarizeBrutos,
+    renderResults: renderBrutosResults,
+  },
 
 };
