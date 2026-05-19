@@ -16,12 +16,14 @@ import { initFileUploadStep }      from './fileUpload.js';
 import { CONTROL_REGISTRY }        from '../controls/registry.js';
 import { autoDetectTabMapping }    from '../parsers/tabuladoControl.js';
 import { autoDetectCatMapping }    from '../parsers/catEmpleados.js';
+import { autoDetectBrutosMapping } from '../parsers/brutosParser.js';
 import { currentPeriod, periodOptions } from '../utils/dates.js';
 
 // Mapa: fileType → función de auto-detección de columnas
 const AUTO_DETECT = {
   tab_control:   autoDetectTabMapping,
   cat_empleados: autoDetectCatMapping,
+  brutos_file:   autoDetectBrutosMapping,
 };
 
 export async function renderControlsWizard(root, clientId) {
@@ -276,10 +278,17 @@ function renderStepExecute(container, state, root) {
     .map(id => CONTROL_REGISTRY[id]?.label || id)
     .join(', ');
 
-  const catData = state.controlFiles['cat_x_empleados']?.cat;
-  const catInfo = catData
-    ? `${esc(catData.fileName)} (${catData.parseMetadata?.activos ?? 0} activos de ${catData.parseMetadata?.total ?? 0})`
-    : '—';
+  // Línea por cada archivo adicional cargado
+  const filesInfo = state.selectedControls.flatMap(id => {
+    const ctrl = CONTROL_REGISTRY[id];
+    if (!ctrl) return [];
+    return ctrl.additionalFiles.map(f => {
+      const fd = state.controlFiles[id]?.[f.key];
+      if (!fd) return `<strong>${esc(f.label)}:</strong> —`;
+      const count = fd.parseMetadata?.activos ?? fd.parseMetadata?.totalRows ?? '?';
+      return `<strong>${esc(f.label)}:</strong> ${esc(fd.fileName)} (${count} registros)`;
+    });
+  }).join('<br>');
 
   container.innerHTML = `
     <h3 style="margin-bottom:var(--sp-5);">Paso 4 — Resumen</h3>
@@ -288,7 +297,7 @@ function renderStepExecute(container, state, root) {
       <strong>Período:</strong> ${esc(state.period)}<br>
       <strong>Controles:</strong> ${esc(ctrlList)}<br>
       <strong>Tabulado:</strong> ${esc(state.tab?.fileName || '—')} (${state.tab?.parseMetadata?.totalRows ?? 0} registros)<br>
-      <strong>Catálogo:</strong> ${catInfo}
+      ${filesInfo}
       ${state.notes ? `<br><strong>Notas:</strong> ${esc(state.notes)}` : ''}
     </div>
     <button class="btn btn--primary btn--lg" id="js-execute-btn">⚡ Ejecutar controles</button>
@@ -339,18 +348,20 @@ async function executeControls(state, statusEl) {
         }
       }
 
-      // Armar el mapping que necesita el control
-      const mapping = {
-        cat: state.controlFiles[controlId]?.cat?.mapping || {},
-        tab: tab.mapping || {},
-      };
+      // Armar mapping genérico: { tab: tabMapping, [fileKey]: fileMapping, ... }
+      const mapping = { tab: tab.mapping || {} };
+      for (const fileSpec of ctrl.additionalFiles) {
+        const fileData = state.controlFiles[controlId]?.[fileSpec.key];
+        if (fileData) mapping[fileSpec.key] = fileData.mapping || {};
+      }
 
-      // Obtener filas
-      const tabRows   = tab.parsedRows;
-      const catActivos = state.controlFiles[controlId]?.cat?.parsedRows || [];
+      // Obtener filas: tab + la primera clave de archivos adicionales como "rows primarios"
+      const tabRows    = tab.parsedRows;
+      const primaryKey = ctrl.additionalFiles[0]?.key;
+      const primaryRows = state.controlFiles[controlId]?.[primaryKey]?.parsedRows || [];
 
       // Ejecutar
-      const results = ctrl.run(catActivos, tabRows, mapping);
+      const results = ctrl.run(primaryRows, tabRows, mapping);
 
       // Guardar resultados
       await saveControlRunResults(runId, controlId, results);
