@@ -41,6 +41,7 @@ const FIELD_DEFS = {
     { key: 'centroCostoColumn',     label: 'Columna de Centro de Costo',         required: true  },
     { key: 'departamentoColumn',    label: 'Columna de Departamento',            required: true  },
     { key: 'fBajaColumn',           label: 'Columna de Fecha de Baja (F. BAJA)', required: true  },
+    { key: 'fAltaColumn',           label: 'Columna de Fecha de Alta (F. ALTA)', required: false },
     { key: 'apellidoColumn',        label: 'Columna de Apellido',                required: false },
     { key: 'nombreColumn',          label: 'Columna de Nombre',                  required: false },
     { key: 'cuilColumn',            label: 'Columna de CUIL',                    required: false },

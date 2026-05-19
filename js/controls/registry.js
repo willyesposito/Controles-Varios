@@ -19,9 +19,9 @@ export const CONTROL_REGISTRY = {
 
   cat_x_empleados: {
     id:          'cat_x_empleados',
-    label:       'Catálogo × Empleados',
-    description: 'Compara el catálogo de empleados del sistema contra el Tabulado. '
-      + 'Valida activos, diferencias de cantidad y distribución por puesto y centro de costo.',
+    label:       'EE x CATEG',
+    description: 'Empleados por Categoría. Compara el catálogo del sistema contra el Tabulado: '
+      + 'valida activos, diferencias de cantidad, discrepancias de campo y distribución por puesto y centro de costo.',
     tabRequired: true,
     additionalFiles: [
       { key: 'cat', label: 'Catálogo de Empleados', fileType: 'cat_empleados' },

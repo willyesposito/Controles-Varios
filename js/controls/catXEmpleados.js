@@ -1,30 +1,21 @@
-// catXEmpleados.js — Lógica y render del Control 1: Catálogo × Empleados
+// catXEmpleados.js — Lógica y render del Control "EE x CATEG" (Empleados por Categoría)
 //
-// Qué valida:
-//   1. Diferencias de cantidad: empleados activos en CAT vs empleados en Tabulado
-//   2. Empleados activos en CAT que no aparecen en Tabulado (con ID, Apellido, Nombre)
-//   3. Empleados en Tabulado que no aparecen en CAT activos
+// Valida:
+//   1. Diferencias de cantidad: activos en CAT vs Tabulado
+//   2. Activos en CAT que no están en Tabulado (con F. Alta)
+//   3. Empleados en Tabulado que no están en CAT activos
 //   4. Discrepancias de campo (PUESTO, CC, DEPTO) en empleados coincidentes
-//   5. Distribución por PUESTO: conteo de CUILs únicos en cada archivo
-//   6. Distribución por CENTRO DE COSTO: ídem
+//   5. Distribución por PUESTO — con detalle de empleados cuando hay diferencia
+//   6. Distribución por CC — ídem
 
-/**
- * Ejecuta el control.
- *
- * @param {object[]} catActivos  - Filas de CAT ya filtradas (solo activos, F.BAJA vacía)
- * @param {object[]} tabRows     - Filas del Tabulado
- * @param {object}   mapping     - { cat: catMapping, tab: tabMapping }
- * @returns {object}             - { summary, missingInTab, missingInCat, fieldDiscrepancies, byPuesto, byCC }
- */
 export function runCatXEmpleados(catActivos, tabRows, mapping) {
   const cm = mapping.cat;
   const tm = mapping.tab;
 
-  // Indexar por ID de empleado (normalizado a string sin espacios)
   const catByEmp = new Map(catActivos.map(r => [norm(r[cm.idEmpColumn]), r]));
   const tabByEmp = new Map(tabRows.map(r => [norm(r[tm.empleadoColumn]), r]));
 
-  // ── 1. Diferencias de empleados ────────────────────────────────────────────
+  // ── 1. Empleados faltantes ─────────────────────────────────────────────────
 
   const missingInTab = [];
   for (const [id, r] of catByEmp) {
@@ -33,6 +24,7 @@ export function runCatXEmpleados(catActivos, tabRows, mapping) {
         id,
         apellido: norm(r[cm.apellidoColumn]),
         nombre:   norm(r[cm.nombreColumn]),
+        fAlta:    cm.fAltaColumn ? fmtDate(r[cm.fAltaColumn]) : '',
       });
     }
   }
@@ -47,7 +39,7 @@ export function runCatXEmpleados(catActivos, tabRows, mapping) {
     }
   }
 
-  // ── 2. Discrepancias de campo en empleados que coinciden ───────────────────
+  // ── 2. Discrepancias de campo en empleados coincidentes ────────────────────
 
   const fieldDiscrepancies = [];
   for (const [id, catRow] of catByEmp) {
@@ -55,55 +47,60 @@ export function runCatXEmpleados(catActivos, tabRows, mapping) {
     if (!tabRow) continue;
 
     const diffs = [];
-
     if (cm.puestoColumn && tm.puestoColumn) {
-      const catVal = norm(catRow[cm.puestoColumn]);
-      const tabVal = norm(tabRow[tm.puestoColumn]);
-      if (catVal !== tabVal) diffs.push({ field: 'PUESTO', cat: catVal, tab: tabVal });
+      const cv = norm(catRow[cm.puestoColumn]), tv = norm(tabRow[tm.puestoColumn]);
+      if (cv !== tv) diffs.push({ field: 'PUESTO', cat: cv, tab: tv });
     }
-
     if (cm.centroCostoColumn && tm.ccColumn) {
-      const catVal = norm(catRow[cm.centroCostoColumn]);
-      const tabVal = norm(tabRow[tm.ccColumn]);
-      if (catVal !== tabVal) diffs.push({ field: 'CENTRO_COSTO', cat: catVal, tab: tabVal });
+      const cv = norm(catRow[cm.centroCostoColumn]), tv = norm(tabRow[tm.ccColumn]);
+      if (cv !== tv) diffs.push({ field: 'CENTRO_COSTO', cat: cv, tab: tv });
     }
-
     if (cm.departamentoColumn && tm.deptoColumn) {
-      const catVal = norm(catRow[cm.departamentoColumn]);
-      const tabVal = norm(tabRow[tm.deptoColumn]);
-      if (catVal !== tabVal) diffs.push({ field: 'DEPTO', cat: catVal, tab: tabVal });
+      const cv = norm(catRow[cm.departamentoColumn]), tv = norm(tabRow[tm.deptoColumn]);
+      if (cv !== tv) diffs.push({ field: 'DEPTO', cat: cv, tab: tv });
     }
-
     if (diffs.length) {
-      const apellido = norm(catRow[cm.apellidoColumn]);
-      const nombre   = norm(catRow[cm.nombreColumn]);
-      fieldDiscrepancies.push({ id, apellido, nombre, diffs });
+      fieldDiscrepancies.push({
+        id,
+        apellido: norm(catRow[cm.apellidoColumn]),
+        nombre:   norm(catRow[cm.nombreColumn]),
+        diffs,
+      });
     }
   }
 
-  // ── 3. Agregaciones por PUESTO y por CENTRO DE COSTO ──────────────────────
+  // ── 3. Distribuciones con detalle de empleados por grupo ───────────────────
 
-  const dedupeKeyCAT = cm.cuilColumn || cm.idEmpColumn;
-  const dedupeKeyTAB = tm.cuilColumn || tm.empleadoColumn;
+  const dedupeCAT = cm.cuilColumn || cm.idEmpColumn;
+  const dedupeTAB = tm.cuilColumn || tm.empleadoColumn;
+
+  const catDispFn = r => ({
+    id:     norm(r[cm.idEmpColumn]),
+    nombre: [norm(r[cm.apellidoColumn]), norm(r[cm.nombreColumn])].filter(Boolean).join(' '),
+  });
+  const tabDispFn = r => ({
+    id:     norm(r[tm.empleadoColumn]),
+    nombre: norm(r[tm.apellidoNombreColumn]) || norm(r[tm.empleadoColumn]),
+  });
 
   const byPuesto = mergeAggregations(
-    countDistinct(catActivos, cm.puestoColumn, dedupeKeyCAT),
-    countDistinct(tabRows,    tm.puestoColumn, dedupeKeyTAB)
+    groupByKey(catActivos, cm.puestoColumn,      dedupeCAT, catDispFn),
+    groupByKey(tabRows,    tm.puestoColumn,       dedupeTAB, tabDispFn)
   );
 
   const byCC = mergeAggregations(
-    countDistinct(catActivos, cm.centroCostoColumn, dedupeKeyCAT),
-    countDistinct(tabRows,    tm.ccColumn,           dedupeKeyTAB)
+    groupByKey(catActivos, cm.centroCostoColumn, dedupeCAT, catDispFn),
+    groupByKey(tabRows,    tm.ccColumn,           dedupeTAB, tabDispFn)
   );
 
   return {
     summary: {
-      catActivos:              catActivos.length,
-      tabTotal:                tabRows.length,
-      diff:                    catActivos.length - tabRows.length,
-      missingInTabCount:       missingInTab.length,
-      missingInCatCount:       missingInCat.length,
-      fieldDiscrepancyCount:   fieldDiscrepancies.length,
+      catActivos:            catActivos.length,
+      tabTotal:              tabRows.length,
+      diff:                  catActivos.length - tabRows.length,
+      missingInTabCount:     missingInTab.length,
+      missingInCatCount:     missingInCat.length,
+      fieldDiscrepancyCount: fieldDiscrepancies.length,
     },
     missingInTab,
     missingInCat,
@@ -113,174 +110,244 @@ export function runCatXEmpleados(catActivos, tabRows, mapping) {
   };
 }
 
-// ── Render de resultados ──────────────────────────────────────────────────────
+// ── Render ────────────────────────────────────────────────────────────────────
 
-/**
- * Renderiza los resultados del Control 1 dentro del contenedor indicado.
- *
- * @param {object}      results   - Salida de runCatXEmpleados
- * @param {HTMLElement} container
- */
 export function renderCatXEmpleadosResults(results, container) {
   const { summary, missingInTab, missingInCat, fieldDiscrepancies, byPuesto, byCC } = results;
   const hasDiff = summary.missingInTabCount > 0
     || summary.missingInCatCount > 0
     || summary.fieldDiscrepancyCount > 0;
+  const diffSign   = summary.diff > 0 ? '+' : '';
+  const showFAlta  = missingInTab.some(r => r.fAlta);
 
-  const diffSign = summary.diff > 0 ? '+' : '';
+  const SUM_STYLE = [
+    'cursor:pointer', 'list-style:none', 'display:flex', 'align-items:center',
+    'gap:var(--sp-2)', 'padding:var(--sp-2) 0', 'font-weight:600',
+    'color:var(--color-primary)', 'font-size:var(--text-base)',
+    'border-bottom:1px solid #E7E6E6', 'margin-bottom:var(--sp-3)',
+  ].join(';');
+
+  // Envuelve contenido en un <details open> con título en el summary
+  const section = (title, content) => `
+    <div style="margin-bottom:var(--sp-6);">
+      <details open>
+        <summary style="${SUM_STYLE}">${esc(title)}</summary>
+        ${content}
+      </details>
+    </div>
+  `;
+
+  // ── Secciones de cruces ────────────────────────────────────────────────────
+
+  const missingInTabHtml = missingInTab.length === 0 ? '' : section(
+    `Activos en CAT que NO están en Tabulado (${missingInTab.length})`,
+    `<div style="overflow-x:auto;">
+      <table class="data-table data-table--compact">
+        <thead>
+          <tr>
+            <th>ID</th><th>Apellido</th><th>Nombre</th>
+            ${showFAlta ? '<th>F. Alta</th>' : ''}
+          </tr>
+        </thead>
+        <tbody>
+          ${missingInTab.map(r => `
+            <tr>
+              <td>${esc(r.id)}</td>
+              <td>${esc(r.apellido)}</td>
+              <td>${esc(r.nombre)}</td>
+              ${showFAlta ? `<td>${esc(r.fAlta)}</td>` : ''}
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>`
+  );
+
+  const missingInCatHtml = missingInCat.length === 0 ? '' : section(
+    `En Tabulado que NO están en CAT activos (${missingInCat.length})`,
+    `<div style="overflow-x:auto;">
+      <table class="data-table data-table--compact">
+        <thead><tr><th>ID</th><th>Nombre</th></tr></thead>
+        <tbody>
+          ${missingInCat.map(r => `
+            <tr><td>${esc(r.id)}</td><td>${esc(r.apellidoNombre)}</td></tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>`
+  );
+
+  const discrepanciesHtml = fieldDiscrepancies.length === 0 ? '' : section(
+    `Discrepancias de campo en empleados coincidentes (${fieldDiscrepancies.length})`,
+    `<div style="overflow-x:auto;">
+      <table class="data-table data-table--compact">
+        <thead>
+          <tr><th>ID</th><th>Empleado</th><th>Campo</th><th>Valor en CAT</th><th>Valor en Tabulado</th></tr>
+        </thead>
+        <tbody>
+          ${fieldDiscrepancies.flatMap(e =>
+            e.diffs.map(d => `
+              <tr>
+                <td>${esc(e.id)}</td>
+                <td>${esc([e.apellido, e.nombre].filter(Boolean).join(' '))}</td>
+                <td><strong>${esc(d.field)}</strong></td>
+                <td>${esc(d.cat)}</td>
+                <td>${esc(d.tab)}</td>
+              </tr>
+            `)
+          ).join('')}
+        </tbody>
+      </table>
+    </div>`
+  );
+
+  // ── Distribuciones con detalle de empleados en filas con diferencia ─────────
+
+  const distRow = r => {
+    if (r.diff === 0) {
+      return `
+        <tr>
+          <td>${esc(r.key)}</td>
+          <td style="text-align:right;">${r.catCount}</td>
+          <td style="text-align:right;">${r.tabCount}</td>
+          <td style="text-align:right;">—</td>
+        </tr>
+      `;
+    }
+
+    const sign       = r.diff > 0 ? '+' : '';
+    const onlyCatHtml = r.onlyInCat.length === 0 ? '' : `
+      <div style="margin-top:var(--sp-2);">
+        <strong style="font-size:var(--text-sm);">Solo en CAT (${r.onlyInCat.length}):</strong>
+        <table class="data-table data-table--compact" style="margin-top:var(--sp-1);">
+          <thead><tr><th>ID</th><th>Empleado</th></tr></thead>
+          <tbody>
+            ${r.onlyInCat.map(e => `<tr><td>${esc(e.id)}</td><td>${esc(e.nombre)}</td></tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+    const onlyTabHtml = r.onlyInTab.length === 0 ? '' : `
+      <div style="margin-top:var(--sp-2);">
+        <strong style="font-size:var(--text-sm);">Solo en Tabulado (${r.onlyInTab.length}):</strong>
+        <table class="data-table data-table--compact" style="margin-top:var(--sp-1);">
+          <thead><tr><th>ID</th><th>Empleado</th></tr></thead>
+          <tbody>
+            ${r.onlyInTab.map(e => `<tr><td>${esc(e.id)}</td><td>${esc(e.nombre)}</td></tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    return `
+      <tr style="background:var(--color-warning-bg);">
+        <td>
+          <details>
+            <summary style="cursor:pointer;">${esc(r.key)}</summary>
+            <div style="padding:var(--sp-2) var(--sp-3) var(--sp-3);">
+              ${onlyCatHtml}
+              ${onlyTabHtml}
+            </div>
+          </details>
+        </td>
+        <td style="text-align:right;">${r.catCount}</td>
+        <td style="text-align:right;">${r.tabCount}</td>
+        <td style="text-align:right;font-weight:600;color:var(--color-danger);">${sign}${r.diff}</td>
+      </tr>
+    `;
+  };
+
+  const distTable = (rows, labelCol) => `
+    <div style="overflow-x:auto;">
+      <table class="data-table data-table--compact">
+        <thead>
+          <tr>
+            <th>${esc(labelCol)}</th>
+            <th style="text-align:right;">CAT</th>
+            <th style="text-align:right;">Tabulado</th>
+            <th style="text-align:right;">Dif.</th>
+          </tr>
+        </thead>
+        <tbody>${rows.map(distRow).join('')}</tbody>
+      </table>
+    </div>
+  `;
+
+  const puestoHtml = section(
+    `Distribución por Puesto (${byPuesto.length} puestos)`,
+    distTable(byPuesto, 'Puesto')
+  );
+
+  const ccHtml = section(
+    `Distribución por Centro de Costo (${byCC.length} centros)`,
+    distTable(byCC, 'Centro de Costo')
+  );
+
+  // ── Render final ───────────────────────────────────────────────────────────
 
   container.innerHTML = `
     <div class="alert ${hasDiff ? 'alert--warning' : 'alert--success'}" style="margin-bottom:var(--sp-5);">
-      <div>
-        <strong>CAT (activos):</strong> ${summary.catActivos} &nbsp;·&nbsp;
-        <strong>Tabulado:</strong> ${summary.tabTotal} &nbsp;·&nbsp;
-        <strong>Diferencia neta:</strong>
-        <span style="color:${summary.diff !== 0 ? 'var(--color-danger)' : 'inherit'};font-weight:600;">
-          ${diffSign}${summary.diff}
-        </span>
+      <strong>CAT (activos):</strong> ${summary.catActivos} &nbsp;·&nbsp;
+      <strong>Tabulado:</strong> ${summary.tabTotal} &nbsp;·&nbsp;
+      <strong>Diferencia neta:</strong>
+      <span style="color:${summary.diff !== 0 ? 'var(--color-danger)' : 'inherit'};font-weight:600;">
+        ${diffSign}${summary.diff}
+      </span>
+      ${hasDiff ? `
         <br><br>
-        ${hasDiff
-          ? `⚠️ &nbsp;<strong>${summary.missingInTabCount}</strong> en CAT no en Tabulado &nbsp;·&nbsp;
-               <strong>${summary.missingInCatCount}</strong> en Tabulado no en CAT &nbsp;·&nbsp;
-               <strong>${summary.fieldDiscrepancyCount}</strong> con campos distintos`
-          : '✅ Los empleados activos del CAT coinciden con el Tabulado.'
-        }
-      </div>
+        ⚠️ &nbsp;<strong>${summary.missingInTabCount}</strong> en CAT no en Tabulado &nbsp;·&nbsp;
+                 <strong>${summary.missingInCatCount}</strong> en Tabulado no en CAT &nbsp;·&nbsp;
+                 <strong>${summary.fieldDiscrepancyCount}</strong> con campos distintos
+      ` : '<br><br>✅ Los empleados activos del CAT coinciden con el Tabulado.'}
     </div>
-
-    ${missingInTab.length ? `
-      <h4 style="margin:var(--sp-5) 0 var(--sp-3);">
-        Activos en CAT que NO están en Tabulado (${missingInTab.length})
-      </h4>
-      <div style="overflow-x:auto;margin-bottom:var(--sp-6);">
-        <table class="data-table data-table--compact">
-          <thead><tr><th>ID</th><th>Apellido</th><th>Nombre</th></tr></thead>
-          <tbody>
-            ${missingInTab.map(r => `
-              <tr>
-                <td>${esc(r.id)}</td>
-                <td>${esc(r.apellido)}</td>
-                <td>${esc(r.nombre)}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      </div>
-    ` : ''}
-
-    ${missingInCat.length ? `
-      <h4 style="margin:var(--sp-5) 0 var(--sp-3);">
-        En Tabulado que NO están en CAT activos (${missingInCat.length})
-      </h4>
-      <div style="overflow-x:auto;margin-bottom:var(--sp-6);">
-        <table class="data-table data-table--compact">
-          <thead><tr><th>ID</th><th>Nombre</th></tr></thead>
-          <tbody>
-            ${missingInCat.map(r => `
-              <tr>
-                <td>${esc(r.id)}</td>
-                <td>${esc(r.apellidoNombre)}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      </div>
-    ` : ''}
-
-    ${fieldDiscrepancies.length ? `
-      <h4 style="margin:var(--sp-5) 0 var(--sp-3);">
-        Discrepancias de campo en empleados coincidentes (${fieldDiscrepancies.length})
-      </h4>
-      <div style="overflow-x:auto;margin-bottom:var(--sp-6);">
-        <table class="data-table data-table--compact">
-          <thead>
-            <tr><th>ID</th><th>Empleado</th><th>Campo</th><th>Valor en CAT</th><th>Valor en Tabulado</th></tr>
-          </thead>
-          <tbody>
-            ${fieldDiscrepancies.flatMap(e =>
-              e.diffs.map(d => `
-                <tr>
-                  <td>${esc(e.id)}</td>
-                  <td>${esc([e.apellido, e.nombre].filter(Boolean).join(', '))}</td>
-                  <td><strong>${esc(d.field)}</strong></td>
-                  <td>${esc(d.cat)}</td>
-                  <td>${esc(d.tab)}</td>
-                </tr>
-              `)
-            ).join('')}
-          </tbody>
-        </table>
-      </div>
-    ` : ''}
-
-    <h4 style="margin:var(--sp-5) 0 var(--sp-3);">Distribución por Puesto</h4>
-    <div style="overflow-x:auto;margin-bottom:var(--sp-6);">
-      <table class="data-table data-table--compact">
-        <thead>
-          <tr><th>Puesto</th><th style="text-align:right;">CAT</th><th style="text-align:right;">Tabulado</th><th style="text-align:right;">Dif.</th></tr>
-        </thead>
-        <tbody>
-          ${byPuesto.map(r => `
-            <tr ${r.diff !== 0 ? 'style="background:var(--color-warning-bg);"' : ''}>
-              <td>${esc(r.key)}</td>
-              <td style="text-align:right;">${r.catCount}</td>
-              <td style="text-align:right;">${r.tabCount}</td>
-              <td style="text-align:right;font-weight:600;color:${r.diff !== 0 ? 'var(--color-danger)' : 'inherit'};">
-                ${r.diff !== 0 ? (r.diff > 0 ? '+' : '') + r.diff : '—'}
-              </td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-    </div>
-
-    <h4 style="margin:var(--sp-5) 0 var(--sp-3);">Distribución por Centro de Costo</h4>
-    <div style="overflow-x:auto;margin-bottom:var(--sp-6);">
-      <table class="data-table data-table--compact">
-        <thead>
-          <tr><th>Centro de Costo</th><th style="text-align:right;">CAT</th><th style="text-align:right;">Tabulado</th><th style="text-align:right;">Dif.</th></tr>
-        </thead>
-        <tbody>
-          ${byCC.map(r => `
-            <tr ${r.diff !== 0 ? 'style="background:var(--color-warning-bg);"' : ''}>
-              <td>${esc(r.key)}</td>
-              <td style="text-align:right;">${r.catCount}</td>
-              <td style="text-align:right;">${r.tabCount}</td>
-              <td style="text-align:right;font-weight:600;color:${r.diff !== 0 ? 'var(--color-danger)' : 'inherit'};">
-                ${r.diff !== 0 ? (r.diff > 0 ? '+' : '') + r.diff : '—'}
-              </td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-    </div>
+    ${missingInTabHtml}
+    ${missingInCatHtml}
+    ${discrepanciesHtml}
+    ${puestoHtml}
+    ${ccHtml}
   `;
 }
 
 // ── Helpers internos ──────────────────────────────────────────────────────────
 
-/** Agrupa filas por groupCol, contando valores únicos de dedupeCol */
-function countDistinct(rows, groupCol, dedupeCol) {
+/** Agrupa filas por groupCol, indexando por idCol → displayFn(row) */
+function groupByKey(rows, groupCol, idCol, displayFn) {
   const map = new Map();
-  if (!groupCol || !dedupeCol) return map;
+  if (!groupCol || !idCol) return map;
   for (const r of rows) {
     const key = norm(r[groupCol]) || '(sin valor)';
-    if (!map.has(key)) map.set(key, new Set());
-    const val = norm(r[dedupeCol]);
-    if (val) map.get(key).add(val);
+    if (!map.has(key)) map.set(key, new Map());
+    const id = norm(r[idCol]);
+    if (id) map.get(key).set(id, displayFn(r));
   }
-  return new Map([...map.entries()].map(([k, s]) => [k, s.size]));
+  return map;
 }
 
-/** Fusiona dos Maps en un array { key, catCount, tabCount, diff } ordenado por key */
-function mergeAggregations(catMap, tabMap) {
-  const keys = new Set([...catMap.keys(), ...tabMap.keys()]);
-  return [...keys].sort().map(key => ({
-    key,
-    catCount: catMap.get(key) ?? 0,
-    tabCount: tabMap.get(key) ?? 0,
-    diff:     (catMap.get(key) ?? 0) - (tabMap.get(key) ?? 0),
-  }));
+/** Fusiona dos Maps en array { key, catCount, tabCount, diff, onlyInCat, onlyInTab } */
+function mergeAggregations(catGroupMap, tabGroupMap) {
+  const keys = new Set([...catGroupMap.keys(), ...tabGroupMap.keys()]);
+  return [...keys].sort().map(key => {
+    const catMap = catGroupMap.get(key) ?? new Map();
+    const tabMap = tabGroupMap.get(key) ?? new Map();
+    const diff   = catMap.size - tabMap.size;
+    const onlyInCat = diff !== 0
+      ? [...catMap.entries()].filter(([id]) => !tabMap.has(id)).map(([, d]) => d)
+      : [];
+    const onlyInTab = diff !== 0
+      ? [...tabMap.entries()].filter(([id]) => !catMap.has(id)).map(([, d]) => d)
+      : [];
+    return { key, catCount: catMap.size, tabCount: tabMap.size, diff, onlyInCat, onlyInTab };
+  });
+}
+
+/** Formatea fechas: acepta serial de Excel (número) o string */
+function fmtDate(val) {
+  if (val == null || String(val).trim() === '') return '';
+  if (typeof val === 'number' && val > 1000) {
+    const d = new Date(Math.round((val - 25569) * 86400000));
+    return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  }
+  return String(val).trim();
 }
 
 function norm(v) { return v != null ? String(v).trim() : ''; }
