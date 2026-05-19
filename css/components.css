@@ -202,6 +202,98 @@
   gap: var(--sp-3);
 }
 
+/* ── Control card (resumen por control en pantalla de resultados) ── */
+.control-card {
+  margin-bottom: var(--sp-5);
+  background: var(--color-surface);
+  border: var(--border);
+  border-left: 4px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.control-card--success { border-left-color: var(--color-success); }
+.control-card--warning { border-left-color: var(--color-warning); }
+.control-card--danger  { border-left-color: var(--color-danger); }
+.control-card--info    { border-left-color: var(--color-primary); }
+
+.control-card > details > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: var(--sp-4) var(--sp-5);
+  user-select: none;
+  transition: background var(--transition);
+}
+.control-card > details > summary::-webkit-details-marker { display: none; }
+.control-card > details > summary:hover { background: var(--color-bg-subtle); }
+
+.control-card__row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+}
+.control-card__status {
+  font-size: var(--text-xl);
+  flex-shrink: 0;
+  line-height: 1;
+}
+.control-card__name {
+  margin: 0;
+  font-size: var(--text-lg);
+  color: var(--color-primary);
+  font-weight: var(--fw-bold);
+  flex-shrink: 0;
+}
+.control-card__headline {
+  color: var(--color-black);
+  font-size: var(--text-sm);
+  flex: 1;
+  min-width: 200px;
+}
+.control-card__expand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--color-primary);
+  font-weight: var(--fw-semibold);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  padding: var(--sp-1) var(--sp-3);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-full);
+  margin-left: auto;
+}
+.control-card__expand-icon {
+  font-size: 10px;
+  transition: transform 0.15s;
+  display: inline-block;
+}
+.control-card > details[open] > summary .control-card__expand-icon {
+  transform: rotate(90deg);
+}
+.control-card > details[open] > summary .control-card__expand-text::after {
+  content: '';
+}
+
+.control-card__insights {
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  margin-top: var(--sp-3);
+  padding-left: calc(var(--text-xl) + var(--sp-4));
+}
+.control-card__insights .badge {
+  padding: var(--sp-1) var(--sp-3);
+  font-size: var(--text-sm);
+}
+
+.control-card__detail {
+  padding: var(--sp-5);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
 /* ── Tabla de datos ──────────────────────────────────────────── */
 .data-table {
   width: 100%;

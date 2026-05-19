@@ -8,6 +8,39 @@
 //   5. Distribución por PUESTO — con detalle de empleados cuando hay diferencia
 //   6. Distribución por CC — ídem
 
+/**
+ * Resumen del control para la tarjeta colapsada en la pantalla de resultados.
+ * Devuelve { status, headline, insights[] }.
+ */
+export function summarizeCatXEmpleados(results) {
+  const s = results.summary;
+  const hasDiff = s.missingInTabCount > 0
+    || s.missingInCatCount > 0
+    || s.fieldDiscrepancyCount > 0;
+  const sign = s.diff > 0 ? '+' : '';
+  return {
+    status: hasDiff ? 'warning' : 'success',
+    headline: `CAT activos: ${s.catActivos} · Tabulado: ${s.tabTotal} · Diferencia neta: ${sign}${s.diff}`,
+    insights: [
+      {
+        type:  s.missingInTabCount > 0 ? 'warning' : 'success',
+        label: 'En CAT, faltan en Tabulado',
+        value: s.missingInTabCount,
+      },
+      {
+        type:  s.missingInCatCount > 0 ? 'warning' : 'success',
+        label: 'En Tabulado, faltan en CAT',
+        value: s.missingInCatCount,
+      },
+      {
+        type:  s.fieldDiscrepancyCount > 0 ? 'warning' : 'success',
+        label: 'Discrepancias de campo',
+        value: s.fieldDiscrepancyCount,
+      },
+    ],
+  };
+}
+
 export function runCatXEmpleados(catActivos, tabRows, mapping) {
   const cm = mapping.cat;
   const tm = mapping.tab;
@@ -113,12 +146,8 @@ export function runCatXEmpleados(catActivos, tabRows, mapping) {
 // ── Render ────────────────────────────────────────────────────────────────────
 
 export function renderCatXEmpleadosResults(results, container) {
-  const { summary, missingInTab, missingInCat, fieldDiscrepancies, byPuesto, byCC } = results;
-  const hasDiff = summary.missingInTabCount > 0
-    || summary.missingInCatCount > 0
-    || summary.fieldDiscrepancyCount > 0;
-  const diffSign   = summary.diff > 0 ? '+' : '';
-  const showFAlta  = missingInTab.some(r => r.fAlta);
+  const { missingInTab, missingInCat, fieldDiscrepancies, byPuesto, byCC } = results;
+  const showFAlta = missingInTab.some(r => r.fAlta);
 
   const SUM_STYLE = [
     'cursor:pointer', 'list-style:none', 'display:flex', 'align-items:center',
@@ -286,20 +315,6 @@ export function renderCatXEmpleadosResults(results, container) {
   // ── Render final ───────────────────────────────────────────────────────────
 
   container.innerHTML = `
-    <div class="alert ${hasDiff ? 'alert--warning' : 'alert--success'}" style="margin-bottom:var(--sp-5);">
-      <strong>CAT (activos):</strong> ${summary.catActivos} &nbsp;·&nbsp;
-      <strong>Tabulado:</strong> ${summary.tabTotal} &nbsp;·&nbsp;
-      <strong>Diferencia neta:</strong>
-      <span style="color:${summary.diff !== 0 ? 'var(--color-danger)' : 'inherit'};font-weight:600;">
-        ${diffSign}${summary.diff}
-      </span>
-      ${hasDiff ? `
-        <br><br>
-        ⚠️ &nbsp;<strong>${summary.missingInTabCount}</strong> en CAT no en Tabulado &nbsp;·&nbsp;
-                 <strong>${summary.missingInCatCount}</strong> en Tabulado no en CAT &nbsp;·&nbsp;
-                 <strong>${summary.fieldDiscrepancyCount}</strong> con campos distintos
-      ` : '<br><br>✅ Los empleados activos del CAT coinciden con el Tabulado.'}
-    </div>
     ${missingInTabHtml}
     ${missingInCatHtml}
     ${discrepanciesHtml}

@@ -1,4 +1,10 @@
 // controlsResults.js — Pantalla de resultados de un control run
+//
+// Cada control se renderiza como una tarjeta colapsada que muestra:
+//   - Status (✅/⚠️) + nombre del control
+//   - Headline con totales clave
+//   - Badges con insights de qué revisar
+//   - Botón "Detalle" que expande para ver las tablas completas
 
 import { getControlRun, getClient, getControlRunResults } from '../db.js';
 import { CONTROL_REGISTRY } from '../controls/registry.js';
@@ -66,23 +72,55 @@ export async function renderControlsResults(root, runId) {
     return;
   }
 
+  // Una tarjeta colapsable por control
   for (const row of resultsRows) {
     const ctrl = CONTROL_REGISTRY[row.controlId];
     if (!ctrl) continue;
 
-    const section = document.createElement('div');
-    section.className = 'card';
-    section.style.marginBottom = 'var(--sp-6)';
-    section.innerHTML = `
-      <div class="card__header">
-        <h3 style="margin:0;">${esc(ctrl.label)}</h3>
-      </div>
-      <div class="card__body" style="padding:var(--sp-5) var(--sp-6);" id="js-ctrl-${esc(row.controlId)}"></div>
-    `;
-    sectionsEl.appendChild(section);
+    const summary = ctrl.summarize
+      ? ctrl.summarize(row.results)
+      : { status: 'info', headline: '', insights: [] };
 
-    const resultContainer = section.querySelector(`#js-ctrl-${CSS.escape(row.controlId)}`);
-    ctrl.renderResults(row.results, resultContainer);
+    const card = document.createElement('div');
+    card.className = `control-card control-card--${summary.status}`;
+    card.innerHTML = `
+      <details>
+        <summary class="control-card__summary">
+          <div class="control-card__row">
+            <span class="control-card__status" aria-hidden="true">${statusIcon(summary.status)}</span>
+            <h3 class="control-card__name">${esc(ctrl.label)}</h3>
+            <span class="control-card__headline">${esc(summary.headline)}</span>
+            <span class="control-card__expand">
+              <span class="control-card__expand-icon">▶</span>
+              <span class="control-card__expand-text">Ver detalle</span>
+            </span>
+          </div>
+          ${summary.insights?.length ? `
+            <div class="control-card__insights">
+              ${summary.insights.map(i => `
+                <span class="badge badge--${esc(i.type)}">
+                  <strong style="margin-right:4px;">${esc(String(i.value))}</strong>${esc(i.label)}
+                </span>
+              `).join('')}
+            </div>
+          ` : ''}
+        </summary>
+        <div class="control-card__detail" id="js-ctrl-${esc(row.controlId)}"></div>
+      </details>
+    `;
+    sectionsEl.appendChild(card);
+
+    const detailEl = card.querySelector(`#js-ctrl-${CSS.escape(row.controlId)}`);
+    ctrl.renderResults(row.results, detailEl);
+  }
+}
+
+function statusIcon(status) {
+  switch (status) {
+    case 'success': return '✅';
+    case 'warning': return '⚠️';
+    case 'danger':  return '⛔';
+    default:        return 'ℹ️';
   }
 }
 

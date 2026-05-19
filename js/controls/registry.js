@@ -1,19 +1,24 @@
 // registry.js — Registro central de todos los controles disponibles
 //
 // Para agregar un control nuevo:
-//   1. Crear js/controls/{id}.js con runXxx() y renderXxxResults()
+//   1. Crear js/controls/{id}.js con runXxx(), renderXxxResults() y summarizeXxx()
 //   2. Importarlos acá y agregar la entrada al CONTROL_REGISTRY
 //
 // Cada entrada define:
-//   id            — identificador único (snake_case)
-//   label         — nombre visible al usuario
-//   description   — descripción breve
-//   tabRequired   — si necesita el Tabulado como archivo pivote
+//   id              — identificador único (snake_case)
+//   label           — nombre visible al usuario
+//   description     — descripción breve
+//   tabRequired     — si necesita el Tabulado como archivo pivote
 //   additionalFiles — archivos adicionales requeridos: [{ key, label, fileType }]
 //   run(catActivos, tabRows, mapping) → resultados
-//   renderResults(results, container)  → HTML dentro del container
+//   summarize(results)                 → { status, headline, insights[] } para la tarjeta colapsada
+//   renderResults(results, container)  → HTML del detalle dentro del container
 
-import { runCatXEmpleados, renderCatXEmpleadosResults } from './catXEmpleados.js';
+import {
+  runCatXEmpleados,
+  renderCatXEmpleadosResults,
+  summarizeCatXEmpleados,
+} from './catXEmpleados.js';
 
 export const CONTROL_REGISTRY = {
 
@@ -27,6 +32,7 @@ export const CONTROL_REGISTRY = {
       { key: 'cat', label: 'Catálogo de Empleados', fileType: 'cat_empleados' },
     ],
     run:           runCatXEmpleados,
+    summarize:     summarizeCatXEmpleados,
     renderResults: renderCatXEmpleadosResults,
   },
 
