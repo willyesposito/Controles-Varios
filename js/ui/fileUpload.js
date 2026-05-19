@@ -246,17 +246,27 @@ function renderError(container, msg, onRetry) {
 }
 
 function renderAlreadyLoaded(container, existingData, onReplace, onComplete) {
-  const { fileName, parseMetadata } = existingData;
+  const { fileName, parseMetadata, fileType } = existingData;
   const warns = parseMetadata?.warnings?.length
     ? `<span class="badge badge--warning" style="margin-left:var(--sp-2);">${parseMetadata.warnings.length} aviso(s)</span>` : '';
+
+  let metaLine;
+  if (fileType === 'cat_empleados') {
+    const fil = parseMetadata?.filtradas ?? 0;
+    metaLine = `${parseMetadata?.activos ?? 0} activos de ${parseMetadata?.total ?? 0} filas`
+      + (fil > 0 ? ` &nbsp;·&nbsp; <span class="badge badge--warning">${fil} sumatorias excluidas</span>` : '');
+  } else if (fileType === 'tab_control') {
+    metaLine = `${parseMetadata?.totalRows ?? 0} empleados`;
+  } else {
+    metaLine = `${parseMetadata?.uniqueLegajos ?? 0} legajos · ${parseMetadata?.detectedConcepts?.length ?? 0} conceptos`;
+  }
 
   container.innerHTML = `
     <div class="alert alert--success" style="margin-bottom:var(--sp-4);">
       ✅ <strong>${escHtml(fileName)}</strong> — procesado correctamente
       <br>
       <span class="text-sm">
-        ${parseMetadata?.uniqueLegajos ?? 0} legajos ·
-        ${parseMetadata?.detectedConcepts?.length ?? 0} conceptos
+        ${metaLine}
         ${warns}
       </span>
     </div>
@@ -300,15 +310,19 @@ function renderMappingForm(container, { headers, preview, fileType, savedMapping
     .map(h => `<option value="${escHtml(h)}" ${h === selected ? 'selected' : ''}>${escHtml(h) || '— Seleccioná —'}</option>`)
     .join('');
 
-  // Campos estándar (legajo, conceptos, importe, etc.)
-  const stdFieldsHtml = fields.map(f => `
-    <div class="form-group">
-      <label class="form-label ${f.required ? 'form-label--required' : ''}">${f.label}</label>
-      <select class="form-select" name="${f.key}" style="max-width:360px;">
-        ${opts(savedMapping?.[f.key] || '')}
-      </select>
+  // Campos estándar en grid horizontal para reducir el scroll vertical
+  const stdFieldsHtml = fields.length === 0 ? '' : `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:var(--sp-3) var(--sp-5);margin-bottom:var(--sp-5);">
+      ${fields.map(f => `
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label ${f.required ? 'form-label--required' : ''}">${f.label}</label>
+          <select class="form-select" name="${f.key}">
+            ${opts(savedMapping?.[f.key] || '')}
+          </select>
+        </div>
+      `).join('')}
     </div>
-  `).join('');
+  `;
 
   // Sección especial de nombre (solo para formatos tabulados)
   const nombreHtml = conNombre ? `
