@@ -22,6 +22,21 @@ db.version(1).stores({
   appConfig:       'key',
 });
 
+// v2 — agrega las tablas del sistema de controles
+db.version(2).stores({
+  clients:           '++id, name, createdAt',
+  groupers:          '++id, clientId, name',
+  grouperConcepts:   '++id, grouperId, conceptCode, [grouperId+conceptCode]',
+  fileProfiles:      '++id, clientId, fileType, [clientId+fileType]',
+  sessions:          '++id, clientId, period, isDefinitive, [clientId+period]',
+  sessionFiles:      '++id, sessionId, fileType',
+  sessionResults:    '++id, sessionId',
+  appConfig:         'key',
+  controlRuns:       '++id, clientId, period, isDefinitive, createdAt, [clientId+period]',
+  controlRunFiles:   '++id, controlRunId, fileType, [controlRunId+fileType]',
+  controlRunResults: '++id, controlRunId, controlId, [controlRunId+controlId]',
+});
+
 // ── CLIENTES ────────────────────────────────────────────────────────────
 
 export async function getClients() {
@@ -195,6 +210,66 @@ export async function getConfig(key) {
 
 export async function setConfig(key, value) {
   return db.appConfig.put({ key, value });
+}
+
+// ── CONTROL RUNS ────────────────────────────────────────────────────────────
+// Un "control run" es una ejecución de uno o más controles para un cliente/período.
+
+export async function createControlRun(clientId, period, selectedControls, notes = '') {
+  const now = new Date().toISOString();
+  return db.controlRuns.add({
+    clientId: Number(clientId), period, selectedControls, notes,
+    isDefinitive: false, createdAt: now, updatedAt: now,
+  });
+}
+
+export async function getControlRuns(clientId) {
+  const rows = await db.controlRuns.where('clientId').equals(Number(clientId)).toArray();
+  return rows.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+}
+
+export async function getControlRun(id) {
+  return db.controlRuns.get(Number(id));
+}
+
+export async function updateControlRun(id, changes) {
+  return db.controlRuns.update(Number(id), { ...changes, updatedAt: new Date().toISOString() });
+}
+
+// ── ARCHIVOS DE CONTROL RUN ─────────────────────────────────────────────────
+
+export async function saveControlRunFile(controlRunId, fileType, fileName, parsedRows, parseMetadata, mapping) {
+  const rid = Number(controlRunId);
+  const existing = await db.controlRunFiles
+    .where('[controlRunId+fileType]').equals([rid, fileType]).first();
+  const data = { controlRunId: rid, fileType, fileName, parsedRows, parseMetadata, mapping };
+  if (existing) {
+    await db.controlRunFiles.update(existing.id, data);
+    return existing.id;
+  }
+  return db.controlRunFiles.add(data);
+}
+
+export async function getControlRunFiles(controlRunId) {
+  return db.controlRunFiles.where('controlRunId').equals(Number(controlRunId)).toArray();
+}
+
+// ── RESULTADOS DE CONTROL RUN ───────────────────────────────────────────────
+
+export async function saveControlRunResults(controlRunId, controlId, results) {
+  const rid = Number(controlRunId);
+  const existing = await db.controlRunResults
+    .where('[controlRunId+controlId]').equals([rid, controlId]).first();
+  const data = { controlRunId: rid, controlId, results, computedAt: new Date().toISOString() };
+  if (existing) {
+    await db.controlRunResults.update(existing.id, data);
+    return existing.id;
+  }
+  return db.controlRunResults.add(data);
+}
+
+export async function getControlRunResults(controlRunId) {
+  return db.controlRunResults.where('controlRunId').equals(Number(controlRunId)).toArray();
 }
 
 export { db };

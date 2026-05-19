@@ -592,6 +592,31 @@
   transform: translateY(-2px);
 }
 
+/* ── Barra de progreso ───────────────────────────────────────── */
+.progress-bar-wrap {
+  width: 100%;
+  max-width: 400px;
+  height: 8px;
+  background: #E7E6E6;
+  border-radius: 99px;
+  overflow: hidden;
+  margin: var(--sp-4) auto 0;
+}
+.progress-bar-fill {
+  height: 100%;
+  background: var(--color-primary);
+  border-radius: 99px;
+  transition: width 0.15s ease;
+}
+.progress-bar-fill--indeterminate {
+  width: 40% !important;
+  animation: progress-slide 1.2s ease-in-out infinite;
+}
+@keyframes progress-slide {
+  0%   { margin-left: -40%; }
+  100% { margin-left: 100%; }
+}
+
 /* ── Responsive básico ───────────────────────────────────────── */
 @media (max-width: 768px) {
   .app-header {

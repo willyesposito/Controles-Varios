@@ -12,12 +12,21 @@ export function isNonEmpty(value) {
   return value !== null && value !== undefined && String(value).trim() !== '';
 }
 
-/** Lee un File del navegador y devuelve su contenido como ArrayBuffer */
-export function readFileAsArrayBuffer(file) {
+/**
+ * Lee un File del navegador y devuelve su contenido como ArrayBuffer.
+ * @param {File} file
+ * @param {function(number):void} [onProgress] - Se llama con el porcentaje leído (0–100)
+ */
+export function readFileAsArrayBuffer(file, onProgress) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = e => resolve(e.target.result);
+    reader.onload  = e => resolve(e.target.result);
     reader.onerror = () => reject(new Error(`No se pudo leer el archivo "${file.name}".`));
+    if (onProgress) {
+      reader.onprogress = (e) => {
+        if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+      };
+    }
     reader.readAsArrayBuffer(file);
   });
 }
