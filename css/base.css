@@ -99,7 +99,7 @@ img { max-width: 100%; height: auto; display: block; }
   position: sticky;
   top: 0;
   z-index: var(--z-header);
-  background: var(--color-white);
+  background: var(--color-surface);
   border-bottom: 3px solid var(--color-primary);
   padding: 0 var(--sp-10);
   height: var(--header-height);
@@ -166,7 +166,7 @@ img { max-width: 100%; height: auto; display: block; }
 
 /* ── Footer ──────────────────────────────────────────────────── */
 .app-footer {
-  background: var(--color-white);
+  background: var(--color-surface);
   border-top: var(--border);
   padding: var(--sp-8) var(--sp-10);
   color: var(--color-wordmark);
