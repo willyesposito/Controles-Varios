@@ -11,6 +11,8 @@ import {
   createControlRun,
   saveControlRunFile,
   saveControlRunResults,
+  getFileProfile,
+  saveFileProfile,
 } from '../db.js';
 import { initFileUploadStep }      from './fileUpload.js';
 import { CONTROL_REGISTRY }        from '../controls/registry.js';
@@ -39,6 +41,8 @@ export async function renderControlsWizard(root, clientId) {
     return;
   }
 
+  const savedBrutosConfig = await getFileProfile(Number(clientId), 'brutos_tab_config');
+
   const state = {
     step:             0,
     clientId:         Number(clientId),
@@ -48,6 +52,7 @@ export async function renderControlsWizard(root, clientId) {
     controlFiles:     { cat_x_empleados: {} },
     period:           currentPeriod(),
     notes:            '',
+    brutosTabConfig:  savedBrutosConfig?.mapping || {},
   };
 
   root.innerHTML = `
@@ -132,12 +137,22 @@ function renderWizardNav(root, state) {
 function canGoNext(state) {
   switch (state.step) {
     case 0: return state.tab !== null;
-    case 1: return state.selectedControls.length > 0
-      && state.selectedControls.every(id => {
-        const ctrl = CONTROL_REGISTRY[id];
-        if (!ctrl) return false;
-        return ctrl.additionalFiles.every(f => state.controlFiles[id]?.[f.key] != null);
-      });
+    case 1: {
+      const allFiles = state.selectedControls.length > 0
+        && state.selectedControls.every(id => {
+          const ctrl = CONTROL_REGISTRY[id];
+          if (!ctrl) return false;
+          return ctrl.additionalFiles.every(f => state.controlFiles[id]?.[f.key] != null);
+        });
+      if (!allFiles) return false;
+      // Si hay controles de Brutos, las columnas de concepto son obligatorias
+      const hasBrutos = state.selectedControls.some(id => id === 'brutos' || id === 'brutos_reporte');
+      if (hasBrutos) {
+        const cfg = state.brutosTabConfig;
+        if (!cfg.tabSalBaseColumn || !cfg.tabACuFutAumenColumn) return false;
+      }
+      return true;
+    }
     case 2: return !!state.period;
     default: return false;
   }
@@ -238,6 +253,96 @@ function renderStepControls(container, state, root) {
       });
     }
   }
+
+  // Panel de configuración de columnas del Tabulado para controles de Brutos
+  const hasBrutos = state.selectedControls.some(id => id === 'brutos' || id === 'brutos_reporte');
+  if (hasBrutos) {
+    renderBrutosTabConfig(filesArea, state, root);
+  }
+}
+
+// ── Configuración de columnas del Tabulado para Brutos ───────────────────────
+
+const BRUTOS_TAB_FIELDS = [
+  { key: 'tabSalBaseColumn',     label: 'Sueldo — columna en Tabulado',            required: true  },
+  { key: 'tabACuFutAumenColumn', label: 'A_CTA_FUT_AUMEN — columna en Tabulado',   required: true  },
+  { key: 'tabNombreColumn',      label: 'Columna NOMBRE',                          required: false },
+  { key: 'tabApellido1Column',   label: 'Columna APELLIDO_1',                      required: false },
+  { key: 'tabFecAltaColumn',     label: 'Columna FECHA_ALTA',                      required: false },
+  { key: 'tabFecBajaColumn',     label: 'Columna FECHA_BAJA',                      required: false },
+  { key: 'tabFecPagoColumn',     label: 'Columna FEC_PAGO',                        required: false },
+];
+
+function autoDetectBrutosTabConfig(tabHeaders) {
+  const lc = h => String(h).toLowerCase();
+  const find = (...kws) => tabHeaders.find(h => kws.some(kw => lc(h).includes(lc(kw)))) || '';
+
+  const nombre   = find('nombre');
+  const apellido = find('apellido');
+
+  return {
+    tabSalBaseColumn:     find('sueldo', '1003-'),
+    tabACuFutAumenColumn: find('a_cta_fut', 'acta_fut', '1017-', 'a cta fut'),
+    tabNombreColumn:      (nombre && nombre !== apellido) ? nombre : '',
+    tabApellido1Column:   (apellido && apellido !== nombre) ? apellido : '',
+    tabFecAltaColumn:     find('fecha_alta', 'fec_alta', 'f_alta', 'alta'),
+    tabFecBajaColumn:     find('fecha_baja', 'fec_baja', 'f_baja', 'baja'),
+    tabFecPagoColumn:     find('fec_pago', 'fecha_pago', 'pago'),
+  };
+}
+
+function renderBrutosTabConfig(container, state, root) {
+  const tabHeaders = state.tab?.parsedRows?.length > 0
+    ? Object.keys(state.tab.parsedRows[0])
+    : [];
+
+  // Auto-detectar solo si el config está vacío
+  if (tabHeaders.length > 0 && !Object.values(state.brutosTabConfig).some(Boolean)) {
+    Object.assign(state.brutosTabConfig, autoDetectBrutosTabConfig(tabHeaders));
+  }
+
+  const opts = (selected = '') =>
+    ['', ...tabHeaders]
+      .map(h => `<option value="${esc(h)}" ${h === selected ? 'selected' : ''}>${esc(h) || '— Sin asignar —'}</option>`)
+      .join('');
+
+  const panel = document.createElement('div');
+  panel.style.cssText = 'margin-top:var(--sp-6);padding:var(--sp-5);border:1px solid var(--color-border);border-radius:var(--radius-md);background:var(--color-surface);';
+  panel.innerHTML = `
+    <h4 style="margin:0 0 var(--sp-2);">Columnas del Tabulado — Brutos</h4>
+    <p class="text-muted" style="margin:0 0 var(--sp-4);font-size:var(--text-sm);">
+      Indicá qué columna del Tabulado corresponde a cada campo de Brutos.
+      FECHA_INI y FECHA_FIN se calculan automáticamente del período seleccionado.
+    </p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:var(--sp-3);">
+      ${BRUTOS_TAB_FIELDS.map(f => {
+        const val  = state.brutosTabConfig[f.key] || '';
+        const warn = f.required && !val;
+        return `
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label ${f.required ? 'form-label--required' : ''}">
+              ${esc(f.label)}
+              ${warn ? '<span style="color:#B45309;font-size:.8em;"> ⚠ requerida</span>' : ''}
+            </label>
+            <select class="form-select" data-brutos-key="${esc(f.key)}"${warn ? ' style="border-color:#EAB308;"' : ''}>
+              ${opts(val)}
+            </select>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+
+  panel.querySelectorAll('[data-brutos-key]').forEach(sel => {
+    sel.addEventListener('change', () => {
+      const k = sel.dataset.brutosKey;
+      if (sel.value) state.brutosTabConfig[k] = sel.value;
+      else delete state.brutosTabConfig[k];
+      renderWizardNav(root, state);
+    });
+  });
+
+  container.appendChild(panel);
 }
 
 // ── Paso 2: Configurar período ────────────────────────────────────────────────
@@ -332,7 +437,13 @@ async function executeControls(state, statusEl) {
       runId, 'tab_control', tab.fileName, tab.parsedRows, tab.parseMetadata, tab.mapping
     );
 
-    // 3. Por cada control: guardar archivos adicionales y ejecutar lógica
+    // 3. Guardar config de Brutos si aplica
+    const hasBrutos = state.selectedControls.some(id => id === 'brutos' || id === 'brutos_reporte');
+    if (hasBrutos && Object.keys(state.brutosTabConfig).length > 0) {
+      await saveFileProfile(state.clientId, 'brutos_tab_config', state.brutosTabConfig);
+    }
+
+    // 4. Por cada control: guardar archivos adicionales y ejecutar lógica
     for (const controlId of state.selectedControls) {
       const ctrl = CONTROL_REGISTRY[controlId];
       if (!ctrl) continue;
@@ -348,8 +459,11 @@ async function executeControls(state, statusEl) {
         }
       }
 
-      // Armar mapping genérico: { tab: tabMapping, [fileKey]: fileMapping, ... }
-      const mapping = { tab: tab.mapping || {} };
+      // Armar mapping: tab + brutosTabConfig (si aplica) + archivos adicionales + período
+      const mapping = {
+        tab:    { ...(tab.mapping || {}), ...state.brutosTabConfig },
+        period: state.period,
+      };
       for (const fileSpec of ctrl.additionalFiles) {
         const fileData = state.controlFiles[controlId]?.[fileSpec.key];
         if (fileData) mapping[fileSpec.key] = fileData.mapping || {};
