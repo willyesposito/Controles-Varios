@@ -96,12 +96,20 @@ function render(root, state) {
 
 function buildStepDots(current) {
   const labels = ['Tabulado', 'Controles', 'Período', 'Ejecutar'];
-  return labels.map((lbl, i) => `
-    <div class="wizard-step ${i === current ? 'wizard-step--active' : i < current ? 'wizard-step--done' : ''}">
-      <div class="wizard-step__number">${i < current ? '✓' : i + 1}</div>
-      <div class="wizard-step__label">${lbl}</div>
-    </div>
-  `).join('');
+  return labels.map((lbl, i) => {
+    const isDone   = i < current;
+    const isActive = i === current;
+    const stepClass = isDone ? 'wizard-step--done' : isActive ? 'wizard-step--active' : '';
+    const step = `
+      <div class="wizard-step ${stepClass}">
+        <div class="wizard-step__bubble">${isDone ? '✓' : i + 1}</div>
+        <div class="wizard-step__label">${lbl}</div>
+      </div>`;
+    const connector = i < labels.length - 1
+      ? `<div class="wizard-step__connector ${isDone ? 'wizard-step__connector--done' : ''}"></div>`
+      : '';
+    return step + connector;
+  }).join('');
 }
 
 function renderWizardNav(root, state) {
