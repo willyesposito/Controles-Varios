@@ -1,21 +1,13 @@
-// brutos.js — Control "Reporte de Brutos"
+// brutos.js — Controles del Reporte de Brutos
 //
-// Cruza el Reporte de Brutos contra los conceptos 1003 y 1017 del Tabulado:
-//   - SAL_BASE (Brutos) vs concepto 1003 (SUELDO) → columna CTRL SALARIO BASE (celeste)
-//   - A_CTA_FUT_AUMEN (Brutos) vs concepto 1017 → columna CTRL A_CTA_FUT_AUMEN (lila)
-//   - Columna extra VALORES TABULADO: legajo, val_1003, val_1017 del Tabulado
+// Modo 1 — "Controlar": cruza SAL_BASE y A_CTA_FUT_AUMEN del Reporte de Brutos
+//   contra las columnas configuradas en el Tabulado (tabSalBaseColumn / tabACuFutAumenColumn).
+//
+// Modo 2 — "Generar Reporte": genera el Reporte de Brutos directamente desde el
+//   Tabulado, sin necesitar el archivo de Brutos. Usa las columnas configuradas
+//   en el mapeo del Tabulado y exporta a .xlsx sin columnas de control ni colores.
 
-const COL_1003 = '1003';
-const COL_1017 = '1017';
-
-// Colores ARGB para el Excel (blending de los tokens CSS sobre blanco):
-//   rgba(0,172,212,0.22)  → #C7ECF6   rgba(0,172,212,0.10)  → #E6F8FB
-//   rgba(130,80,200,0.20) → #E6DCF4   rgba(130,80,200,0.09) → #F4EFFA
-const XL_CYAN_HDR  = 'FFC7ECF6';
-const XL_CYAN_BG   = 'FFE6F8FB';
-const XL_LILAC_HDR = 'FFE6DCF4';
-const XL_LILAC_BG  = 'FFF4EFFA';
-const XL_GRAY_HDR  = 'FFE8E8E8';
+// ── Modo 1: Controlar ─────────────────────────────────────────────────────────
 
 export function summarizeBrutos(results) {
   const s = results.summary;
@@ -26,12 +18,12 @@ export function summarizeBrutos(results) {
     insights: [
       {
         type:  s.conDifSalario > 0 ? 'warning' : 'success',
-        label: 'diferencias SAL_BASE vs 1003',
+        label: 'diferencias SAL_BASE vs Tabulado',
         value: s.conDifSalario,
       },
       {
         type:  s.conDifACuFutAumen > 0 ? 'warning' : 'success',
-        label: 'diferencias A_CTA_FUT_AUMEN vs 1017',
+        label: 'diferencias A_CTA_FUT_AUMEN vs Tabulado',
         value: s.conDifACuFutAumen,
       },
     ],
@@ -42,34 +34,42 @@ export function runBrutos(brutosRows, tabRows, mapping) {
   const bm = mapping.brutos;
   const tm = mapping.tab;
 
-  // Índice del Tabulado: legajo → { val1003, val1017 }
+  // Columnas del Tabulado para los conceptos — configuradas por el usuario en el mapeo.
+  // Fallback a '1003' / '1017' por compatibilidad con tabulados que usan código solo.
+  const salBaseTabCol   = tm.tabSalBaseColumn    || null;
+  const aCuFutAuTabCol  = tm.tabACuFutAumenColumn || null;
+
+  // Índice del Tabulado: legajo → { valSal, valAcu }
   const tabByLegajo = new Map();
   for (const row of tabRows) {
     const id = norm(row[tm.empleadoColumn]);
     if (!id) continue;
-    // Los conceptos son columnas numéricas — el header puede ser número o string según el Excel
-    const val1003 = toNum(row[COL_1003]) ?? toNum(row[1003]);
-    const val1017 = toNum(row[COL_1017]) ?? toNum(row[1017]);
-    tabByLegajo.set(id, { val1003, val1017 });
+    const valSal = salBaseTabCol
+      ? toNum(row[salBaseTabCol])
+      : (toNum(row['1003']) ?? toNum(row[1003]));
+    const valAcu = aCuFutAuTabCol
+      ? toNum(row[aCuFutAuTabCol])
+      : (toNum(row['1017']) ?? toNum(row[1017]));
+    tabByLegajo.set(id, { valSal, valAcu });
   }
 
   const rows = brutosRows.map(row => {
     const legajo      = norm(row[bm.legajoColumn]);
     const salBase     = toNum(row[bm.salBaseColumn]);
     const aCuFutAumen = toNum(row[bm.aCuFutAumenColumn]);
-    const tab         = tabByLegajo.get(legajo) ?? { val1003: null, val1017: null };
+    const tab         = tabByLegajo.get(legajo) ?? { valSal: null, valAcu: null };
 
-    const ctrlSalBase     = tab.val1003 !== null && salBase !== null
-      ? tab.val1003 - salBase : null;
-    const ctrlACuFutAumen = tab.val1017 !== null && aCuFutAumen !== null
-      ? tab.val1017 - aCuFutAumen : null;
+    const ctrlSalBase     = tab.valSal !== null && salBase !== null
+      ? tab.valSal - salBase : null;
+    const ctrlACuFutAumen = tab.valAcu !== null && aCuFutAumen !== null
+      ? tab.valAcu - aCuFutAumen : null;
 
     return {
       legajo,
       salBase,
       aCuFutAumen,
-      tabVal1003:     tab.val1003,
-      tabVal1017:     tab.val1017,
+      tabValSal:    tab.valSal,
+      tabValAcu:    tab.valAcu,
       ctrlSalBase,
       ctrlACuFutAumen,
     };
@@ -77,7 +77,7 @@ export function runBrutos(brutosRows, tabRows, mapping) {
 
   const conDifSalario     = rows.filter(r => r.ctrlSalBase !== null     && Math.abs(r.ctrlSalBase)     > 0.01).length;
   const conDifACuFutAumen = rows.filter(r => r.ctrlACuFutAumen !== null && Math.abs(r.ctrlACuFutAumen) > 0.01).length;
-  const sinTabData        = rows.filter(r => r.tabVal1003 === null && r.tabVal1017 === null).length;
+  const sinTabData        = rows.filter(r => r.tabValSal === null && r.tabValAcu === null).length;
 
   return {
     summary: { total: rows.length, conDifSalario, conDifACuFutAumen, sinTabData },
@@ -141,12 +141,12 @@ export function renderBrutosResults(results, container) {
         </tr>
         <tr>
           <th style="background:${CYAN_HDR};">SAL_BASE</th>
-          <th style="background:${CYAN_HDR};"><strong>CTRL SALARIO BASE</strong><br><small style="font-weight:400;">1003 − SAL_BASE</small></th>
+          <th style="background:${CYAN_HDR};"><strong>CTRL SALARIO BASE</strong><br><small style="font-weight:400;">Tab − Brutos</small></th>
           <th style="background:${LILAC_HDR};">A_CTA_FUT_AUMEN</th>
-          <th style="background:${LILAC_HDR};"><strong>CTRL A_CTA_FUT_AUMEN</strong><br><small style="font-weight:400;">1017 − A_CTA_FUT_AUMEN</small></th>
+          <th style="background:${LILAC_HDR};"><strong>CTRL A_CTA_FUT_AUMEN</strong><br><small style="font-weight:400;">Tab − Brutos</small></th>
           <th>Legajo</th>
-          <th>1003 (SUELDO)</th>
-          <th>1017 (A CTA FUT)</th>
+          <th>SAL_BASE (Tab)</th>
+          <th>A_CTA_FUT (Tab)</th>
         </tr>
       </thead>
       <tbody>
@@ -158,8 +158,8 @@ export function renderBrutosResults(results, container) {
             <td style="text-align:right;background:${LILAC_BG};">${fmt(r.aCuFutAumen)}</td>
             <td style="text-align:right;background:${LILAC_BG};${diffStyle(r.ctrlACuFutAumen)}">${fmt(r.ctrlACuFutAumen)}</td>
             <td>${esc(r.legajo)}</td>
-            <td style="text-align:right;">${fmt(r.tabVal1003)}</td>
-            <td style="text-align:right;">${fmt(r.tabVal1017)}</td>
+            <td style="text-align:right;">${fmt(r.tabValSal)}</td>
+            <td style="text-align:right;">${fmt(r.tabValAcu)}</td>
           </tr>
         `).join('')}
       </tbody>
@@ -171,9 +171,140 @@ export function renderBrutosResults(results, container) {
   container.appendChild(tableWrap);
 }
 
-// ── Export ────────────────────────────────────────────────────────────────────
+// ── Modo 2: Generar Reporte ───────────────────────────────────────────────────
 
-async function exportBrutosToXlsx(results) {
+export function runBrutosReporte(_primaryRows, tabRows, mapping) {
+  const tm = mapping.tab;
+
+  const rows = tabRows
+    .filter(row => !!norm(row[tm.empleadoColumn]))
+    .map(row => ({
+      fecIni:      tm.tabFecIniColumn      ? fmtRaw(row[tm.tabFecIniColumn])      : null,
+      fecFin:      tm.tabFecFinColumn      ? fmtRaw(row[tm.tabFecFinColumn])      : null,
+      legajo:      norm(row[tm.empleadoColumn]),
+      nombre:      tm.apellidoNombreColumn ? norm(row[tm.apellidoNombreColumn])   : null,
+      fecAlta:     tm.tabFecAltaColumn     ? fmtRaw(row[tm.tabFecAltaColumn])     : null,
+      fecBaja:     tm.tabFecBajaColumn     ? fmtRaw(row[tm.tabFecBajaColumn])     : null,
+      fecPago:     tm.tabFecPagoColumn     ? fmtRaw(row[tm.tabFecPagoColumn])     : null,
+      salBase:     tm.tabSalBaseColumn     ? toNum(row[tm.tabSalBaseColumn])      : null,
+      aCuFutAumen: tm.tabACuFutAumenColumn ? toNum(row[tm.tabACuFutAumenColumn])  : null,
+      puesto:      tm.puestoColumn         ? norm(row[tm.puestoColumn])           : null,
+      idEquipo:    tm.tabIdEquipoColumn    ? norm(row[tm.tabIdEquipoColumn])      : null,
+    }));
+
+  return {
+    summary: { total: rows.length },
+    rows,
+    cols: {
+      hasFecIni:    !!tm.tabFecIniColumn,
+      hasFecFin:    !!tm.tabFecFinColumn,
+      hasNombre:    !!tm.apellidoNombreColumn,
+      hasFecAlta:   !!tm.tabFecAltaColumn,
+      hasFecBaja:   !!tm.tabFecBajaColumn,
+      hasFecPago:   !!tm.tabFecPagoColumn,
+      hasSalBase:   !!tm.tabSalBaseColumn,
+      hasACuFut:    !!tm.tabACuFutAumenColumn,
+      hasPuesto:    !!tm.puestoColumn,
+      hasIdEquipo:  !!tm.tabIdEquipoColumn,
+    },
+  };
+}
+
+export function summarizeBrutosReporte(results) {
+  return {
+    status:   'info',
+    headline: `${results.summary.total} registros — Reporte generado del Tabulado`,
+    insights: [],
+  };
+}
+
+export function renderBrutosReporteResults(results, container) {
+  const { rows, cols } = results;
+
+  if (rows.length === 0) {
+    container.innerHTML = `<p class="text-muted" style="padding:var(--sp-4);">Sin datos.</p>`;
+    return;
+  }
+
+  const fmt    = v => v === null ? '—' : v.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtTxt = v => v === null ? '—' : esc(String(v));
+
+  // Definición de columnas activas (en orden del archivo de Brutos)
+  const colDefs = [
+    cols.hasFecIni    && { label: 'FECHA_INI',       key: 'fecIni',      type: 'txt' },
+    cols.hasFecFin    && { label: 'FECHA_FIN',        key: 'fecFin',      type: 'txt' },
+    { label: 'ID_EMPLEADO',      key: 'legajo',      type: 'txt' },
+    cols.hasNombre    && { label: 'APELLIDO Y NOMBRE', key: 'nombre',    type: 'txt' },
+    cols.hasFecAlta   && { label: 'FECHA_ALTA',       key: 'fecAlta',     type: 'txt' },
+    cols.hasFecBaja   && { label: 'FECHA_BAJA',       key: 'fecBaja',     type: 'txt' },
+    cols.hasFecPago   && { label: 'FEC_PAGO',         key: 'fecPago',     type: 'txt' },
+    cols.hasSalBase   && { label: 'SAL_BASE',         key: 'salBase',     type: 'num' },
+    cols.hasACuFut    && { label: 'A_CTA_FUT_AUMEN',  key: 'aCuFutAumen', type: 'num' },
+    cols.hasPuesto    && { label: 'N_PUESTO',         key: 'puesto',      type: 'txt' },
+    cols.hasIdEquipo  && { label: 'ID_EQUIPO',        key: 'idEquipo',    type: 'txt' },
+  ].filter(Boolean);
+
+  // Botón exportar
+  const toolbar = document.createElement('div');
+  toolbar.style.cssText = 'display:flex;justify-content:flex-end;padding:var(--sp-3) var(--sp-3) 0;';
+  const exportBtn = document.createElement('button');
+  exportBtn.className = 'btn btn--primary btn--sm';
+  exportBtn.textContent = '⬇ Exportar .xlsx';
+  exportBtn.addEventListener('click', async () => {
+    exportBtn.disabled = true;
+    exportBtn.textContent = 'Generando…';
+    try {
+      await exportBrutosReporteToXlsx(results);
+    } catch (err) {
+      alert('Error al generar el archivo: ' + err.message);
+    } finally {
+      exportBtn.disabled = false;
+      exportBtn.textContent = '⬇ Exportar .xlsx';
+    }
+  });
+  toolbar.appendChild(exportBtn);
+
+  // Tabla
+  const tableWrap = document.createElement('div');
+  tableWrap.style.overflowX = 'auto';
+  tableWrap.innerHTML = `
+    <table class="data-table data-table--compact">
+      <thead>
+        <tr>
+          ${colDefs.map(c => `<th>${esc(c.label)}</th>`).join('')}
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map(r => `
+          <tr>
+            ${colDefs.map(c =>
+              c.type === 'num'
+                ? `<td style="text-align:right;">${fmt(r[c.key])}</td>`
+                : `<td>${fmtTxt(r[c.key])}</td>`
+            ).join('')}
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+
+  if (colDefs.length <= 1) {
+    tableWrap.innerHTML = `
+      <div class="alert alert--warning" style="margin:var(--sp-4);">
+        ⚠ No hay columnas configuradas en el Tabulado para el Reporte de Brutos.<br>
+        Volvé a cargar el Tabulado y completá los campos de la sección "Brutos".
+      </div>
+    `;
+  }
+
+  container.innerHTML = '';
+  container.appendChild(toolbar);
+  container.appendChild(tableWrap);
+}
+
+// ── Exports a Excel ───────────────────────────────────────────────────────────
+
+async function loadExcelJS() {
   if (!window.ExcelJS) {
     await new Promise((resolve, reject) => {
       const s = document.createElement('script');
@@ -183,127 +314,150 @@ async function exportBrutosToXlsx(results) {
       document.head.appendChild(s);
     });
   }
+}
 
+async function exportBrutosToXlsx(results) {
+  await loadExcelJS();
   const { rows } = results;
+
   const wb = new window.ExcelJS.Workbook();
   wb.creator = 'H&A Controles Nómina';
   wb.created = new Date();
 
   const ws = wb.addWorksheet('Reporte de Brutos');
-
   ws.columns = [
-    { width: 12 },  // A: Legajo
-    { width: 18 },  // B: SAL_BASE
-    { width: 22 },  // C: CTRL SALARIO BASE
-    { width: 20 },  // D: A_CTA_FUT_AUMEN
-    { width: 24 },  // E: CTRL A_CTA_FUT_AUMEN
-    { width: 12 },  // F: Legajo (Tabulado)
-    { width: 18 },  // G: 1003 (SUELDO)
-    { width: 18 },  // H: 1017 (A CTA FUT)
+    { width: 12 }, { width: 18 }, { width: 22 },
+    { width: 20 }, { width: 24 }, { width: 12 },
+    { width: 18 }, { width: 18 },
   ];
 
   const solidFill = argb => ({ type: 'pattern', pattern: 'solid', fgColor: { argb } });
   const base = { name: 'Calibri', size: 10 };
   const bold = { ...base, bold: true };
 
-  // Fila 1: encabezados de grupo (con merge)
+  const CYAN_HDR  = 'FFC7ECF6';
+  const CYAN_BG   = 'FFE6F8FB';
+  const LILAC_HDR = 'FFE6DCF4';
+  const LILAC_BG  = 'FFF4EFFA';
+  const GRAY_HDR  = 'FFE8E8E8';
+
+  // Fila 1: grupos
   const r1 = ws.addRow(['Legajo', 'Salario Base', null, 'A Cta Fut Aumen', null, 'Valores Tabulado', null, null]);
+  const r2 = ws.addRow(['', 'SAL_BASE', 'CTRL SALARIO BASE', 'A_CTA_FUT_AUMEN', 'CTRL A_CTA_FUT_AUMEN', 'Legajo', 'SAL_BASE (Tab)', 'A_CTA_FUT (Tab)']);
 
-  // Fila 2: encabezados de columna
-  const r2 = ws.addRow(['', 'SAL_BASE', 'CTRL SALARIO BASE', 'A_CTA_FUT_AUMEN', 'CTRL A_CTA_FUT_AUMEN', 'Legajo', '1003 (SUELDO)', '1017 (A CTA FUT)']);
-
-  // Merges (después de agregar las dos filas)
   ws.mergeCells('A1:A2');
   ws.mergeCells('B1:C1');
   ws.mergeCells('D1:E1');
   ws.mergeCells('F1:H1');
-
   r1.height = 22;
   r2.height = 20;
 
-  const styleGrpHdr = (cell, bgArgb) => {
-    cell.font      = { ...bold };
+  const styleGrp = (cell, bg) => {
+    cell.font = { ...bold };
     cell.alignment = { horizontal: 'center', vertical: 'middle' };
-    cell.fill      = solidFill(bgArgb);
-    cell.border    = { bottom: { style: 'thin', color: { argb: 'FFB0B0B0' } } };
+    cell.fill = solidFill(bg);
+    cell.border = { bottom: { style: 'thin', color: { argb: 'FFB0B0B0' } } };
   };
+  styleGrp(r1.getCell(1), GRAY_HDR);
+  styleGrp(r1.getCell(2), CYAN_HDR);
+  styleGrp(r1.getCell(4), LILAC_HDR);
+  styleGrp(r1.getCell(6), GRAY_HDR);
 
-  styleGrpHdr(r1.getCell(1), XL_GRAY_HDR);   // Legajo (merge A1:A2)
-  styleGrpHdr(r1.getCell(2), XL_CYAN_HDR);   // Salario Base
-  styleGrpHdr(r1.getCell(4), XL_LILAC_HDR);  // A Cta Fut Aumen
-  styleGrpHdr(r1.getCell(6), XL_GRAY_HDR);   // Valores Tabulado
-
-  const styleColHdr = (cell, bgArgb, isBold = false) => {
-    cell.font      = isBold ? { ...bold } : { ...base };
+  const styleCol = (cell, bg, isBold = false) => {
+    cell.font = isBold ? { ...bold } : { ...base };
     cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-    cell.fill      = solidFill(bgArgb);
-    cell.border    = { bottom: { style: 'medium', color: { argb: 'FFB0B0B0' } } };
+    cell.fill = solidFill(bg);
+    cell.border = { bottom: { style: 'medium', color: { argb: 'FFB0B0B0' } } };
   };
+  styleCol(r2.getCell(2), CYAN_HDR,  false);
+  styleCol(r2.getCell(3), CYAN_HDR,  true);
+  styleCol(r2.getCell(4), LILAC_HDR, false);
+  styleCol(r2.getCell(5), LILAC_HDR, true);
+  styleCol(r2.getCell(6), GRAY_HDR,  false);
+  styleCol(r2.getCell(7), GRAY_HDR,  false);
+  styleCol(r2.getCell(8), GRAY_HDR,  false);
 
-  styleColHdr(r2.getCell(2), XL_CYAN_HDR,  false);  // SAL_BASE
-  styleColHdr(r2.getCell(3), XL_CYAN_HDR,  true);   // CTRL SALARIO BASE — negrita
-  styleColHdr(r2.getCell(4), XL_LILAC_HDR, false);  // A_CTA_FUT_AUMEN
-  styleColHdr(r2.getCell(5), XL_LILAC_HDR, true);   // CTRL A_CTA_FUT_AUMEN — negrita
-  styleColHdr(r2.getCell(6), XL_GRAY_HDR,  false);  // Legajo Tab
-  styleColHdr(r2.getCell(7), XL_GRAY_HDR,  false);  // 1003
-  styleColHdr(r2.getCell(8), XL_GRAY_HDR,  false);  // 1017
-
-  // Filas de datos congeladas desde la fila 3
   ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 2 }];
 
   const numFmt = '#,##0.00';
-
   for (const r of rows) {
-    const dr = ws.addRow([
-      r.legajo,
-      r.salBase,
-      r.ctrlSalBase,
-      r.aCuFutAumen,
-      r.ctrlACuFutAumen,
-      r.legajo,
-      r.tabVal1003,
-      r.tabVal1017,
-    ]);
-
-    // Fondos de color
-    dr.getCell(2).fill = solidFill(XL_CYAN_BG);
-    dr.getCell(3).fill = solidFill(XL_CYAN_BG);
-    dr.getCell(4).fill = solidFill(XL_LILAC_BG);
-    dr.getCell(5).fill = solidFill(XL_LILAC_BG);
-
-    // Formato numérico y alineación
+    const dr = ws.addRow([r.legajo, r.salBase, r.ctrlSalBase, r.aCuFutAumen, r.ctrlACuFutAumen, r.legajo, r.tabValSal, r.tabValAcu]);
+    dr.getCell(2).fill = solidFill(CYAN_BG);
+    dr.getCell(3).fill = solidFill(CYAN_BG);
+    dr.getCell(4).fill = solidFill(LILAC_BG);
+    dr.getCell(5).fill = solidFill(LILAC_BG);
     for (const col of [2, 3, 4, 5, 7, 8]) {
-      const cell = dr.getCell(col);
-      cell.numFmt    = numFmt;
-      cell.alignment = { horizontal: 'right', vertical: 'middle' };
-      cell.font      = { ...base };
+      dr.getCell(col).numFmt    = numFmt;
+      dr.getCell(col).alignment = { horizontal: 'right', vertical: 'middle' };
+      dr.getCell(col).font      = { ...base };
     }
-
-    // Rojo+negrita cuando hay diferencia
-    if (r.ctrlSalBase !== null && Math.abs(r.ctrlSalBase) > 0.01) {
+    if (r.ctrlSalBase !== null && Math.abs(r.ctrlSalBase) > 0.01)
       dr.getCell(3).font = { ...base, bold: true, color: { argb: 'FFCC0000' } };
-    }
-    if (r.ctrlACuFutAumen !== null && Math.abs(r.ctrlACuFutAumen) > 0.01) {
+    if (r.ctrlACuFutAumen !== null && Math.abs(r.ctrlACuFutAumen) > 0.01)
       dr.getCell(5).font = { ...base, bold: true, color: { argb: 'FFCC0000' } };
-    }
-
-    dr.getCell(1).font      = { ...base };
-    dr.getCell(6).font      = { ...base };
-    dr.getCell(1).alignment = { vertical: 'middle' };
-    dr.getCell(6).alignment = { vertical: 'middle' };
+    dr.getCell(1).font = { ...base };
+    dr.getCell(6).font = { ...base };
   }
 
-  // Descarga
-  const buf  = await wb.xlsx.writeBuffer();
-  const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href     = url;
-  a.download = `Brutos_Control_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.xlsx`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  await downloadXlsx(wb, `Brutos_Control_${dateSuffix()}.xlsx`);
+}
+
+async function exportBrutosReporteToXlsx(results) {
+  await loadExcelJS();
+  const { rows, cols } = results;
+
+  const wb = new window.ExcelJS.Workbook();
+  wb.creator = 'H&A Controles Nómina';
+  wb.created = new Date();
+
+  const ws = wb.addWorksheet('Reporte de Brutos');
+
+  // Columnas activas (mismo orden que la tabla HTML)
+  const colDefs = [
+    cols.hasFecIni    && { label: 'FECHA_INI',        key: 'fecIni',      type: 'txt', width: 14 },
+    cols.hasFecFin    && { label: 'FECHA_FIN',         key: 'fecFin',      type: 'txt', width: 14 },
+    { label: 'ID_EMPLEADO',       key: 'legajo',      type: 'txt', width: 12 },
+    cols.hasNombre    && { label: 'APELLIDO Y NOMBRE', key: 'nombre',      type: 'txt', width: 28 },
+    cols.hasFecAlta   && { label: 'FECHA_ALTA',        key: 'fecAlta',     type: 'txt', width: 14 },
+    cols.hasFecBaja   && { label: 'FECHA_BAJA',        key: 'fecBaja',     type: 'txt', width: 14 },
+    cols.hasFecPago   && { label: 'FEC_PAGO',          key: 'fecPago',     type: 'txt', width: 14 },
+    cols.hasSalBase   && { label: 'SAL_BASE',          key: 'salBase',     type: 'num', width: 18 },
+    cols.hasACuFut    && { label: 'A_CTA_FUT_AUMEN',   key: 'aCuFutAumen', type: 'num', width: 20 },
+    cols.hasPuesto    && { label: 'N_PUESTO',          key: 'puesto',      type: 'txt', width: 14 },
+    cols.hasIdEquipo  && { label: 'ID_EQUIPO',         key: 'idEquipo',    type: 'txt', width: 12 },
+  ].filter(Boolean);
+
+  ws.columns = colDefs.map(c => ({ width: c.width }));
+
+  // Fila de encabezado
+  const hdr = ws.addRow(colDefs.map(c => c.label));
+  hdr.height = 20;
+  hdr.eachCell(cell => {
+    cell.font      = { name: 'Calibri', size: 10, bold: true };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8E8E8' } };
+    cell.border    = { bottom: { style: 'medium', color: { argb: 'FFB0B0B0' } } };
+  });
+
+  ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 1 }];
+
+  const numFmt = '#,##0.00';
+  for (const r of rows) {
+    const values = colDefs.map(c => r[c.key]);
+    const dr = ws.addRow(values);
+    colDefs.forEach((c, i) => {
+      const cell = dr.getCell(i + 1);
+      cell.font = { name: 'Calibri', size: 10 };
+      if (c.type === 'num') {
+        cell.numFmt    = numFmt;
+        cell.alignment = { horizontal: 'right', vertical: 'middle' };
+      } else {
+        cell.alignment = { vertical: 'middle' };
+      }
+    });
+  }
+
+  await downloadXlsx(wb, `Brutos_Reporte_${dateSuffix()}.xlsx`);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -316,7 +470,30 @@ function toNum(v) {
   return isNaN(n) ? null : n;
 }
 
+function fmtRaw(v) {
+  if (v === null || v === undefined) return null;
+  const s = String(v).trim();
+  return s === '' ? null : s;
+}
+
 function esc(str) {
   return String(str ?? '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function dateSuffix() {
+  return new Date().toISOString().slice(0, 10).replace(/-/g, '');
+}
+
+async function downloadXlsx(wb, fileName) {
+  const buf  = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
