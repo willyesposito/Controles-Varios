@@ -195,9 +195,9 @@ export function runBrutosReporte(_primaryRows, tabRows, mapping) {
       legajo:      norm(row[tm.empleadoColumn]),
       nombre:      nombreCol    ? norm(row[nombreCol])                          : null,
       apellido1:   apellido1Col ? norm(row[apellido1Col])                      : null,
-      fecAlta:     tm.tabFecAltaColumn ? fmtRaw(row[tm.tabFecAltaColumn])     : null,
-      fecBaja:     tm.tabFecBajaColumn ? fmtRaw(row[tm.tabFecBajaColumn])     : null,
-      fecPago:     tm.tabFecPagoColumn ? fmtRaw(row[tm.tabFecPagoColumn])     : null,
+      fecAlta:     tm.tabFecAltaColumn ? fmtDate(row[tm.tabFecAltaColumn])     : null,
+      fecBaja:     tm.tabFecBajaColumn ? fmtDate(row[tm.tabFecBajaColumn])     : null,
+      fecPago:     tm.tabFecPagoColumn ? fmtDate(row[tm.tabFecPagoColumn])     : null,
       salBase:     tm.tabSalBaseColumn     ? toNum(row[tm.tabSalBaseColumn])  : null,
       aCuFutAumen: tm.tabACuFutAumenColumn ? toNum(row[tm.tabACuFutAumenColumn]) : null,
       puesto:      tm.puestoColumn         ? norm(row[tm.puestoColumn])       : null,
@@ -481,6 +481,21 @@ function toNum(v) {
 
 function fmtRaw(v) {
   if (v === null || v === undefined) return null;
+  const s = String(v).trim();
+  return s === '' ? null : s;
+}
+
+// Convierte un serial de fecha Excel (ej: 45734) a "D/M/YYYY".
+// Si el valor no es un serial válido (ya viene como texto de fecha), lo devuelve tal cual.
+function fmtDate(v) {
+  if (v === null || v === undefined) return null;
+  const n = Number(v);
+  // Seriales razonables: > 1 (post 1900) y < 100000 (no es un importe)
+  if (!isNaN(n) && n > 1 && n < 100000 && String(v).trim() !== '') {
+    const d = new Date(Math.round((n - 25569) * 86400 * 1000));
+    return `${d.getUTCDate()}/${d.getUTCMonth() + 1}/${d.getUTCFullYear()}`;
+  }
+  // Ya viene como string de fecha u otro formato — lo devuelve sin cambios
   const s = String(v).trim();
   return s === '' ? null : s;
 }
