@@ -10,7 +10,7 @@
 //   description     — descripción breve
 //   tabRequired     — si necesita el Tabulado como archivo pivote
 //   additionalFiles — archivos adicionales requeridos: [{ key, label, fileType }]
-//   run(catActivos, tabRows, mapping) → resultados
+//   run(primaryRows, tabRows, mapping) → resultados
 //   summarize(results)                 → { status, headline, insights[] } para la tarjeta colapsada
 //   renderResults(results, container)  → HTML del detalle dentro del container
 
@@ -24,6 +24,9 @@ import {
   runBrutos,
   renderBrutosResults,
   summarizeBrutos,
+  runBrutosReporte,
+  renderBrutosReporteResults,
+  summarizeBrutosReporte,
 } from './brutos.js';
 
 export const CONTROL_REGISTRY = {
@@ -44,9 +47,10 @@ export const CONTROL_REGISTRY = {
 
   brutos: {
     id:          'brutos',
-    label:       'Brutos',
-    description: 'Reporte de Brutos. Cruza SAL_BASE y A_CTA_FUT_AUMEN del Reporte de Brutos contra '
-      + 'los conceptos 1003 (SUELDO) y 1017 (A CTA FUT AUMEN) del Tabulado.',
+    label:       'Brutos — Controlar',
+    description: 'Cruza SAL_BASE y A_CTA_FUT_AUMEN del Reporte de Brutos contra '
+      + 'las columnas configuradas en el Tabulado (SUELDO y A_CTA_FUT_AUMEN). '
+      + 'Requiere el archivo de Brutos y el Tabulado con las columnas de Brutos configuradas.',
     tabRequired: true,
     additionalFiles: [
       { key: 'brutos', label: 'Reporte de Brutos', fileType: 'brutos_file' },
@@ -54,6 +58,20 @@ export const CONTROL_REGISTRY = {
     run:           runBrutos,
     summarize:     summarizeBrutos,
     renderResults: renderBrutosResults,
+  },
+
+  brutos_reporte: {
+    id:          'brutos_reporte',
+    label:       'Brutos — Generar Reporte',
+    description: 'Genera el Reporte de Brutos directamente desde el Tabulado, '
+      + 'sin necesitar el archivo de Brutos. '
+      + 'El Tabulado debe tener configuradas las columnas de la sección Brutos. '
+      + 'Exporta a .xlsx sin columnas de control ni colores.',
+    tabRequired: true,
+    additionalFiles: [],
+    run:           runBrutosReporte,
+    summarize:     summarizeBrutosReporte,
+    renderResults: renderBrutosReporteResults,
   },
 
 };
