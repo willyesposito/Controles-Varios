@@ -174,38 +174,47 @@ export function renderBrutosResults(results, container) {
 // ── Modo 2: Generar Reporte ───────────────────────────────────────────────────
 
 export function runBrutosReporte(_primaryRows, tabRows, mapping) {
-  const tm = mapping.tab;
+  const tm     = mapping.tab;
+  const period = mapping.period || '';
+
+  // FECHA_INI y FECHA_FIN: primer y último día hábil del período
+  const [year, month] = period.split('-').map(Number);
+  const fecIniStr = (year && month) ? fmtDateAR(firstBusinessDay(year, month)) : '';
+  const fecFinStr = (year && month) ? fmtDateAR(lastBusinessDay(year, month))  : '';
+
+  // La columna de nombre puede ser combinada (apellidoNombreColumn) o
+  // separada (tabNombreColumn + tabApellido1Column)
+  const nombreCol   = tm.tabNombreColumn   || tm.apellidoNombreColumn || null;
+  const apellido1Col = tm.tabApellido1Column || null;
 
   const rows = tabRows
     .filter(row => !!norm(row[tm.empleadoColumn]))
     .map(row => ({
-      fecIni:      tm.tabFecIniColumn      ? fmtRaw(row[tm.tabFecIniColumn])      : null,
-      fecFin:      tm.tabFecFinColumn      ? fmtRaw(row[tm.tabFecFinColumn])      : null,
+      fecIni:      fecIniStr,
+      fecFin:      fecFinStr,
       legajo:      norm(row[tm.empleadoColumn]),
-      nombre:      tm.apellidoNombreColumn ? norm(row[tm.apellidoNombreColumn])   : null,
-      fecAlta:     tm.tabFecAltaColumn     ? fmtRaw(row[tm.tabFecAltaColumn])     : null,
-      fecBaja:     tm.tabFecBajaColumn     ? fmtRaw(row[tm.tabFecBajaColumn])     : null,
-      fecPago:     tm.tabFecPagoColumn     ? fmtRaw(row[tm.tabFecPagoColumn])     : null,
-      salBase:     tm.tabSalBaseColumn     ? toNum(row[tm.tabSalBaseColumn])      : null,
-      aCuFutAumen: tm.tabACuFutAumenColumn ? toNum(row[tm.tabACuFutAumenColumn])  : null,
-      puesto:      tm.puestoColumn         ? norm(row[tm.puestoColumn])           : null,
-      idEquipo:    tm.tabIdEquipoColumn    ? norm(row[tm.tabIdEquipoColumn])      : null,
+      nombre:      nombreCol    ? norm(row[nombreCol])                          : null,
+      apellido1:   apellido1Col ? norm(row[apellido1Col])                      : null,
+      fecAlta:     tm.tabFecAltaColumn ? fmtRaw(row[tm.tabFecAltaColumn])     : null,
+      fecBaja:     tm.tabFecBajaColumn ? fmtRaw(row[tm.tabFecBajaColumn])     : null,
+      fecPago:     tm.tabFecPagoColumn ? fmtRaw(row[tm.tabFecPagoColumn])     : null,
+      salBase:     tm.tabSalBaseColumn     ? toNum(row[tm.tabSalBaseColumn])  : null,
+      aCuFutAumen: tm.tabACuFutAumenColumn ? toNum(row[tm.tabACuFutAumenColumn]) : null,
+      puesto:      tm.puestoColumn         ? norm(row[tm.puestoColumn])       : null,
     }));
 
   return {
     summary: { total: rows.length },
     rows,
     cols: {
-      hasFecIni:    !!tm.tabFecIniColumn,
-      hasFecFin:    !!tm.tabFecFinColumn,
-      hasNombre:    !!tm.apellidoNombreColumn,
+      hasNombre:    !!nombreCol,
+      hasApellido1: !!apellido1Col,
       hasFecAlta:   !!tm.tabFecAltaColumn,
       hasFecBaja:   !!tm.tabFecBajaColumn,
       hasFecPago:   !!tm.tabFecPagoColumn,
       hasSalBase:   !!tm.tabSalBaseColumn,
       hasACuFut:    !!tm.tabACuFutAumenColumn,
       hasPuesto:    !!tm.puestoColumn,
-      hasIdEquipo:  !!tm.tabIdEquipoColumn,
     },
   };
 }
@@ -229,19 +238,19 @@ export function renderBrutosReporteResults(results, container) {
   const fmt    = v => v === null ? '—' : v.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmtTxt = v => v === null ? '—' : esc(String(v));
 
-  // Definición de columnas activas (en orden del archivo de Brutos)
+  // Definición de columnas activas (orden idéntico al archivo de Brutos)
   const colDefs = [
-    cols.hasFecIni    && { label: 'FECHA_INI',       key: 'fecIni',      type: 'txt' },
-    cols.hasFecFin    && { label: 'FECHA_FIN',        key: 'fecFin',      type: 'txt' },
-    { label: 'ID_EMPLEADO',      key: 'legajo',      type: 'txt' },
-    cols.hasNombre    && { label: 'APELLIDO Y NOMBRE', key: 'nombre',    type: 'txt' },
+    { label: 'FECHA_INI',                            key: 'fecIni',      type: 'txt' },
+    { label: 'FECHA_FIN',                            key: 'fecFin',      type: 'txt' },
+    { label: 'ID_EMPLEADO',                          key: 'legajo',      type: 'txt' },
+    cols.hasNombre    && { label: 'NOMBRE',           key: 'nombre',      type: 'txt' },
+    cols.hasApellido1 && { label: 'APELLIDO_1',       key: 'apellido1',   type: 'txt' },
     cols.hasFecAlta   && { label: 'FECHA_ALTA',       key: 'fecAlta',     type: 'txt' },
     cols.hasFecBaja   && { label: 'FECHA_BAJA',       key: 'fecBaja',     type: 'txt' },
     cols.hasFecPago   && { label: 'FEC_PAGO',         key: 'fecPago',     type: 'txt' },
     cols.hasSalBase   && { label: 'SAL_BASE',         key: 'salBase',     type: 'num' },
     cols.hasACuFut    && { label: 'A_CTA_FUT_AUMEN',  key: 'aCuFutAumen', type: 'num' },
     cols.hasPuesto    && { label: 'N_PUESTO',         key: 'puesto',      type: 'txt' },
-    cols.hasIdEquipo  && { label: 'ID_EQUIPO',        key: 'idEquipo',    type: 'txt' },
   ].filter(Boolean);
 
   // Botón exportar
@@ -412,19 +421,19 @@ async function exportBrutosReporteToXlsx(results) {
 
   const ws = wb.addWorksheet('Reporte de Brutos');
 
-  // Columnas activas (mismo orden que la tabla HTML)
+  // Columnas activas (orden idéntico al archivo de Brutos)
   const colDefs = [
-    cols.hasFecIni    && { label: 'FECHA_INI',        key: 'fecIni',      type: 'txt', width: 14 },
-    cols.hasFecFin    && { label: 'FECHA_FIN',         key: 'fecFin',      type: 'txt', width: 14 },
-    { label: 'ID_EMPLEADO',       key: 'legajo',      type: 'txt', width: 12 },
-    cols.hasNombre    && { label: 'APELLIDO Y NOMBRE', key: 'nombre',      type: 'txt', width: 28 },
+    { label: 'FECHA_INI',                             key: 'fecIni',      type: 'txt', width: 14 },
+    { label: 'FECHA_FIN',                             key: 'fecFin',      type: 'txt', width: 14 },
+    { label: 'ID_EMPLEADO',        key: 'legajo',     type: 'txt', width: 12 },
+    cols.hasNombre    && { label: 'NOMBRE',            key: 'nombre',      type: 'txt', width: 22 },
+    cols.hasApellido1 && { label: 'APELLIDO_1',        key: 'apellido1',   type: 'txt', width: 22 },
     cols.hasFecAlta   && { label: 'FECHA_ALTA',        key: 'fecAlta',     type: 'txt', width: 14 },
     cols.hasFecBaja   && { label: 'FECHA_BAJA',        key: 'fecBaja',     type: 'txt', width: 14 },
     cols.hasFecPago   && { label: 'FEC_PAGO',          key: 'fecPago',     type: 'txt', width: 14 },
     cols.hasSalBase   && { label: 'SAL_BASE',          key: 'salBase',     type: 'num', width: 18 },
     cols.hasACuFut    && { label: 'A_CTA_FUT_AUMEN',   key: 'aCuFutAumen', type: 'num', width: 20 },
     cols.hasPuesto    && { label: 'N_PUESTO',          key: 'puesto',      type: 'txt', width: 14 },
-    cols.hasIdEquipo  && { label: 'ID_EQUIPO',         key: 'idEquipo',    type: 'txt', width: 12 },
   ].filter(Boolean);
 
   ws.columns = colDefs.map(c => ({ width: c.width }));
@@ -483,6 +492,25 @@ function esc(str) {
 
 function dateSuffix() {
   return new Date().toISOString().slice(0, 10).replace(/-/g, '');
+}
+
+// Primer día hábil (lun–vie) del mes
+function firstBusinessDay(year, month) {
+  const d = new Date(year, month - 1, 1);
+  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+  return d;
+}
+
+// Último día hábil (lun–vie) del mes
+function lastBusinessDay(year, month) {
+  const d = new Date(year, month, 0); // día 0 del mes siguiente = último del actual
+  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1);
+  return d;
+}
+
+// Fecha como D/M/YYYY (formato usado en el archivo de Brutos)
+function fmtDateAR(d) {
+  return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
 }
 
 async function downloadXlsx(wb, fileName) {
