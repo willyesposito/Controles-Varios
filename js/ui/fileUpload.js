@@ -304,7 +304,7 @@ function renderMappingForm(container, { headers, preview, fileType, savedMapping
         <thead><tr>${headers.map(h => `<th>${escHtml(h)}</th>`).join('')}</tr></thead>
         <tbody>
           ${(preview || []).slice(0, 3).map(row =>
-            `<tr>${headers.map((_, i) => `<td>${escHtml(String(row[i] ?? ''))}</td>`).join('')}</tr>`
+            `<tr>${headers.map((_, i) => `<td>${escHtml(fmtPreviewCell(row[i]))}</td>`).join('')}</tr>`
           ).join('')}
         </tbody>
       </table>
@@ -481,6 +481,15 @@ function fileTypeLabel(fileType) {
     cat_empleados:               'Catálogo de Empleados',
     brutos_file:                 'Reporte de Brutos',
   }[fileType] || fileType;
+}
+
+function fmtPreviewCell(val) {
+  if (val instanceof Date) {
+    const d = String(val.getDate()).padStart(2, '0');
+    const m = String(val.getMonth() + 1).padStart(2, '0');
+    return `${d}/${m}/${val.getFullYear()}`;
+  }
+  return String(val ?? '');
 }
 
 function escHtml(str) {

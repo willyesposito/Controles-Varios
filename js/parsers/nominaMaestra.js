@@ -16,7 +16,7 @@ import { parseAmount } from '../utils/currency.js';
  * @returns {{ headers: string[], preview: any[][] }}
  */
 export function detectHeaders(arrayBuffer) {
-  const workbook = XLSX.read(arrayBuffer, { type: 'array', cellDates: false });
+  const workbook = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
   const headers = (rawRows[0] || []).map(h => (h !== null ? String(h).trim() : ''));
