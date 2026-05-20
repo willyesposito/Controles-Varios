@@ -95,11 +95,13 @@ function renderClientCard(client) {
         </div>
       </div>
       ${client.notes ? `<div class="card__body" style="padding:var(--sp-3) var(--sp-6);font-size:var(--text-sm);color:var(--color-wordmark);">${escHtml(client.notes)}</div>` : ''}
-      <div class="card__footer" style="justify-content:flex-start;gap:var(--sp-2);">
-        <button class="btn btn--primary btn--sm js-controls-btn">📋 Controles</button>
-        <button class="btn btn--secondary btn--sm js-run-btn">▶ Cruce nómina</button>
-        <button class="btn btn--secondary btn--sm js-groupers-btn">⚙ Agrupadores</button>
-        <button class="btn btn--ghost btn--sm js-delete-btn" style="margin-left:auto;">🗑 Borrar</button>
+      <div class="card__footer" style="justify-content:space-between;gap:var(--sp-2);flex-wrap:wrap;">
+        <div style="display:flex;gap:var(--sp-2);flex-wrap:wrap;">
+          <button class="btn btn--primary btn--sm js-controls-btn">📋 Controles</button>
+          <button class="btn btn--secondary btn--sm js-run-btn">▶ Cruce nómina</button>
+          <button class="btn btn--secondary btn--sm js-groupers-btn">⚙ Agrupadores</button>
+        </div>
+        <button class="btn btn--ghost btn--sm js-delete-btn">🗑 Borrar</button>
       </div>
     </div>
   `;
