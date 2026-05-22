@@ -368,6 +368,13 @@ function renderMappingForm(container, { headers, preview, fileType, savedMapping
   `;
 
   // Sección especial de nombre (solo para formatos tabulados)
+  const valNAC = savedMapping?.nombreApellidoColumn || '';
+  const valAp  = savedMapping?.apellidoColumn || '';
+  const valNm  = savedMapping?.nombreColumn || '';
+  const lvlNAC = matchLevel(valNAC);
+  const lvlAp  = matchLevel(valAp);
+  const lvlNm  = matchLevel(valNm);
+
   const nombreHtml = conNombre ? `
     <div class="form-group" style="margin-top:var(--sp-2);">
       <label class="form-label">Apellido y nombre del empleado</label>
@@ -393,24 +400,24 @@ function renderMappingForm(container, { headers, preview, fileType, savedMapping
 
       <!-- Modo: una sola columna -->
       <div id="js-nombre-junto" style="display:${savedNombreMode === 'junto' ? 'block' : 'none'};">
-        <label class="form-label">Columna con el nombre completo</label>
-        <select class="form-select" name="nombreApellidoColumn" style="max-width:360px;">
-          ${opts(savedMapping?.nombreApellidoColumn || '')}
+        <label class="form-label">Columna con el nombre completo${fieldBadge(lvlNAC)}</label>
+        <select class="form-select" name="nombreApellidoColumn" style="max-width:360px;${fieldStyle(lvlNAC)}">
+          ${opts(valNAC)}
         </select>
       </div>
 
       <!-- Modo: columnas separadas -->
       <div id="js-nombre-separado" style="display:${savedNombreMode === 'separado' ? 'block' : 'none'};">
         <div class="form-group">
-          <label class="form-label">Columna de Apellido</label>
-          <select class="form-select" name="apellidoColumn" style="max-width:360px;">
-            ${opts(savedMapping?.apellidoColumn || '')}
+          <label class="form-label">Columna de Apellido${fieldBadge(lvlAp)}</label>
+          <select class="form-select" name="apellidoColumn" style="max-width:360px;${fieldStyle(lvlAp)}">
+            ${opts(valAp)}
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Columna de Nombre</label>
-          <select class="form-select" name="nombreColumn" style="max-width:360px;">
-            ${opts(savedMapping?.nombreColumn || '')}
+          <label class="form-label">Columna de Nombre${fieldBadge(lvlNm)}</label>
+          <select class="form-select" name="nombreColumn" style="max-width:360px;${fieldStyle(lvlNm)}">
+            ${opts(valNm)}
           </select>
         </div>
       </div>
@@ -515,6 +522,33 @@ function fileTypeLabel(fileType) {
     brutos_file:                 'Reporte de Brutos',
     gs_pers_file:                'Reporte de GS Pers (Gastos Personales y Cochera)',
   }[fileType] || fileType;
+}
+
+// ── Helpers de calidad de match para selects de columnas ─────────────────────
+// matchLevel: devuelve 'exact' | 'saved' | 'warn' | 'none'
+//   exact  — valor pre-completado por auto-detección en esta carga
+//   saved  — valor pre-completado desde el perfil de sesión anterior
+//   warn   — había mapping pero el campo quedó vacío
+//   none   — sin dato previo
+export function matchLevel(val, { autoDetected, hasSavedMapping }) {
+  if (autoDetected && val)              return 'exact';
+  if (!autoDetected && hasSavedMapping && val) return 'saved';
+  if (hasSavedMapping && !val)          return 'warn';
+  return 'none';
+}
+
+export function matchSelectStyle(level) {
+  if (level === 'exact') return 'border-color:var(--color-match-exact);background:var(--color-match-exact-bg);';
+  if (level === 'saved') return 'border-color:var(--color-match-saved);background:var(--color-match-saved-bg);';
+  if (level === 'warn')  return 'border-color:#EAB308;background:rgba(234,179,8,0.08);';
+  return '';
+}
+
+export function matchBadge(level) {
+  if (level === 'exact') return ' <span style="color:var(--color-match-exact);font-size:0.75em;font-weight:600;">✓ auto</span>';
+  if (level === 'saved') return ' <span style="color:var(--color-match-saved);font-size:0.75em;">↺ sesión anterior</span>';
+  if (level === 'warn')  return ' <span style="color:#B45309;font-size:0.8em;">⚠ sin asignar</span>';
+  return '';
 }
 
 function fmtPreviewCell(val) {

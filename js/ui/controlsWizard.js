@@ -14,7 +14,7 @@ import {
   getFileProfile,
   saveFileProfile,
 } from '../db.js';
-import { initFileUploadStep }      from './fileUpload.js';
+import { initFileUploadStep, matchLevel, matchSelectStyle, matchBadge } from './fileUpload.js';
 import { CONTROL_REGISTRY }        from '../controls/registry.js';
 import { autoDetectTabMapping }    from '../parsers/tabuladoControl.js';
 import { autoDetectCatMapping }    from '../parsers/catEmpleados.js';
@@ -60,8 +60,9 @@ export async function renderControlsWizard(root, clientId) {
     notes:            '',
     // tabExtraConfig: columnas adicionales del Tabulado para Brutos y GS Pers
     // (se persiste bajo la clave 'brutos_tab_config' por compatibilidad histórica).
-    tabExtraConfig:   savedBrutosConfig?.mapping || {},
-    expandedGroups:   new Set(),  // grupos de controles cuyo panel de modos está abierto
+    tabExtraConfig:            savedBrutosConfig?.mapping || {},
+    tabExtraConfigAutoDetected: false,
+    expandedGroups:            new Set(),  // grupos de controles cuyo panel de modos está abierto
   };
 
   root.innerHTML = `
@@ -495,7 +496,11 @@ function renderTabExtraConfig(container, state, root, { hasBrutos, hasGsPers }) 
   // Auto-detectar solo si el config está vacío
   if (tabHeaders.length > 0 && !Object.values(state.tabExtraConfig).some(Boolean)) {
     Object.assign(state.tabExtraConfig, autoDetectTabExtraConfig(tabHeaders));
+    state.tabExtraConfigAutoDetected = true;
   }
+
+  const hasSavedConfig = Object.values(state.tabExtraConfig).some(Boolean);
+  const autoDetected   = state.tabExtraConfigAutoDetected;
 
   // Construir lista de campos a mostrar según los controles seleccionados.
   // Los campos específicos de cada control van primero (obligatorios), después los compartidos.
@@ -524,15 +529,16 @@ function renderTabExtraConfig(container, state, root, { hasBrutos, hasGsPers }) 
     </p>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:var(--sp-3);">
       ${fields.map(f => {
-        const val  = state.tabExtraConfig[f.key] || '';
-        const warn = f.required && !val;
+        const val   = state.tabExtraConfig[f.key] || '';
+        const level = matchLevel(val, { autoDetected, hasSavedMapping: hasSavedConfig });
+        const style = matchSelectStyle(level);
+        const badge = matchBadge(level);
         return `
           <div class="form-group" style="margin-bottom:0;">
             <label class="form-label ${f.required ? 'form-label--required' : ''}">
-              ${esc(f.label)}
-              ${warn ? '<span style="color:#B45309;font-size:.8em;"> ⚠ requerida</span>' : ''}
+              ${esc(f.label)}${badge}
             </label>
-            <select class="form-select" data-tab-extra-key="${esc(f.key)}"${warn ? ' style="border-color:#EAB308;"' : ''}>
+            <select class="form-select" data-tab-extra-key="${esc(f.key)}"${style ? ` style="${style}"` : ''}>
               ${opts(val)}
             </select>
           </div>
