@@ -19,6 +19,7 @@ import { CONTROL_REGISTRY }        from '../controls/registry.js';
 import { autoDetectTabMapping }    from '../parsers/tabuladoControl.js';
 import { autoDetectCatMapping }    from '../parsers/catEmpleados.js';
 import { autoDetectBrutosMapping } from '../parsers/brutosParser.js';
+import { autoDetectGsPersMapping } from '../parsers/gsPersParser.js';
 import { currentPeriod, periodOptions } from '../utils/dates.js';
 
 // Mapa: fileType → función de auto-detección de columnas
@@ -26,7 +27,12 @@ const AUTO_DETECT = {
   tab_control:   autoDetectTabMapping,
   cat_empleados: autoDetectCatMapping,
   brutos_file:   autoDetectBrutosMapping,
+  gs_pers_file:  autoDetectGsPersMapping,
 };
+
+// IDs de controles agrupados (para validación y detección de grupos seleccionados)
+const BRUTOS_IDS  = ['brutos', 'brutos_reporte'];
+const GS_PERS_IDS = ['gs_pers', 'gs_pers_reporte'];
 
 export async function renderControlsWizard(root, clientId) {
   const client = await getClient(clientId);
@@ -52,7 +58,10 @@ export async function renderControlsWizard(root, clientId) {
     controlFiles:     { cat_x_empleados: {} },
     period:           currentPeriod(),
     notes:            '',
-    brutosTabConfig:  savedBrutosConfig?.mapping || {},
+    // tabExtraConfig: columnas adicionales del Tabulado para Brutos y GS Pers
+    // (se persiste bajo la clave 'brutos_tab_config' por compatibilidad histórica).
+    tabExtraConfig:   savedBrutosConfig?.mapping || {},
+    expandedGroups:   new Set(),  // grupos de controles cuyo panel de modos está abierto
   };
 
   root.innerHTML = `
@@ -153,11 +162,17 @@ function canGoNext(state) {
           return ctrl.additionalFiles.every(f => state.controlFiles[id]?.[f.key] != null);
         });
       if (!allFiles) return false;
+
+      const cfg = state.tabExtraConfig;
       // Si hay controles de Brutos, las columnas de concepto son obligatorias
-      const hasBrutos = state.selectedControls.some(id => id === 'brutos' || id === 'brutos_reporte');
+      const hasBrutos = state.selectedControls.some(id => BRUTOS_IDS.includes(id));
       if (hasBrutos) {
-        const cfg = state.brutosTabConfig;
         if (!cfg.tabSalBaseColumn || !cfg.tabACuFutAumenColumn) return false;
+      }
+      // Si hay controles de GS Pers, las columnas de concepto son obligatorias
+      const hasGsPers = state.selectedControls.some(id => GS_PERS_IDS.includes(id));
+      if (hasGsPers) {
+        if (!cfg.tabGtosPersonalesColumn || !cfg.tabDtoCocheraColumn) return false;
       }
       return true;
     }
@@ -192,27 +207,161 @@ function renderStepTab(container, state, root) {
 
 // ── Paso 1: Seleccionar controles y cargar archivos ───────────────────────────
 
+// Construye la sección colapsable "¿Qué hace cada control?" del paso 2.
+function buildHelpSection() {
+  const allControls = Object.values(CONTROL_REGISTRY);
+
+  const cards = allControls
+    .filter(c => c.help)
+    .map(c => {
+      const stepsHtml = c.help.how.map((step, i) =>
+        `<li style="margin-bottom:var(--sp-1);">${esc(step)}</li>`
+      ).join('');
+      return `
+        <div style="
+          padding: var(--sp-4);
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-md);
+          background: var(--color-bg);
+          min-width: 200px;
+          flex: 1 1 220px;
+        ">
+          <p style="margin:0 0 var(--sp-2);font-weight:var(--fw-semibold);font-size:var(--text-sm);">
+            ${esc(c.label)}
+          </p>
+          <p style="margin:0 0 var(--sp-3);font-size:var(--text-sm);color:var(--color-wordmark);">
+            ${esc(c.help.what)}
+          </p>
+          <ol style="margin:0;padding-left:var(--sp-5);font-size:var(--text-sm);">
+            ${stepsHtml}
+          </ol>
+        </div>
+      `;
+    }).join('');
+
+  return `
+    <details style="margin-bottom:var(--sp-5);">
+      <summary style="
+        cursor:pointer;
+        font-size:var(--text-sm);
+        font-weight:var(--fw-semibold);
+        color:var(--color-primary);
+        list-style:none;
+        display:flex;
+        align-items:center;
+        gap:var(--sp-2);
+        user-select:none;
+        margin-bottom:var(--sp-1);
+      ">
+        <span class="js-help-arrow">▸</span> ¿Qué hace cada control?
+      </summary>
+      <div style="
+        display:flex;
+        flex-wrap:wrap;
+        gap:var(--sp-3);
+        margin-top:var(--sp-4);
+        padding:var(--sp-4);
+        background:var(--color-surface);
+        border:1px solid var(--color-border);
+        border-radius:var(--radius-md);
+      ">
+        ${cards}
+      </div>
+    </details>
+  `;
+}
+
+// Agrupa los controles del REGISTRY por su `group.id`. Devuelve una lista de bloques
+// en el orden de definición del registry. Cada bloque es:
+//   - { kind: 'standalone', ctrl }                    → un solo control sin grupo
+//   - { kind: 'group', groupMeta, controls: [...] }   → varios controles bajo un mismo grupo
+function buildControlBlocks() {
+  const blocks  = [];
+  const seenIdx = new Map();  // groupId → posición en blocks
+  for (const ctrl of Object.values(CONTROL_REGISTRY)) {
+    if (!ctrl.group) {
+      blocks.push({ kind: 'standalone', ctrl });
+      continue;
+    }
+    const gid = ctrl.group.id;
+    if (seenIdx.has(gid)) {
+      blocks[seenIdx.get(gid)].controls.push(ctrl);
+    } else {
+      seenIdx.set(gid, blocks.length);
+      blocks.push({ kind: 'group', groupMeta: ctrl.group, controls: [ctrl] });
+    }
+  }
+  return blocks;
+}
+
+// Un grupo se renderiza expandido si: (a) el usuario lo abrió manualmente, o
+// (b) alguno de sus modos está activo.
+function isGroupExpanded(groupId, state) {
+  if (state.expandedGroups.has(groupId)) return true;
+  return Object.values(CONTROL_REGISTRY)
+    .some(c => c.group?.id === groupId && state.selectedControls.includes(c.id));
+}
+
 function renderStepControls(container, state, root) {
-  const controls = Object.values(CONTROL_REGISTRY);
+  const blocks = buildControlBlocks();
+
+  // Render de cada bloque como HTML
+  const blocksHtml = blocks.map(b => {
+    if (b.kind === 'standalone') {
+      const active = state.selectedControls.includes(b.ctrl.id);
+      return `
+        <button class="pill ${active ? 'pill--active' : ''}"
+                data-ctrl="${esc(b.ctrl.id)}"
+                title="${esc(b.ctrl.description)}">
+          ${esc(b.ctrl.label)}
+        </button>
+      `;
+    }
+    // Grupo con sub-modos
+    const groupId   = b.groupMeta.id;
+    const expanded  = isGroupExpanded(groupId, state);
+    const anyActive = b.controls.some(c => state.selectedControls.includes(c.id));
+    const arrow     = expanded ? '▾' : '▸';
+    const subsHtml  = expanded
+      ? `<div class="control-group__modes">
+           ${b.controls.map(c => {
+             const subActive = state.selectedControls.includes(c.id);
+             return `
+               <button class="pill pill--sub ${subActive ? 'pill--active' : ''}"
+                       data-ctrl="${esc(c.id)}"
+                       title="${esc(c.description)}">
+                 ${esc(c.group.mode)}
+               </button>
+             `;
+           }).join('')}
+         </div>`
+      : '';
+    return `
+      <div class="control-group">
+        <button class="pill ${anyActive ? 'pill--active' : ''}"
+                data-group="${esc(groupId)}">
+          ${esc(b.groupMeta.label)} ${arrow}
+        </button>
+        ${subsHtml}
+      </div>
+    `;
+  }).join('');
 
   container.innerHTML = `
     <h3 style="margin-bottom:var(--sp-2);">Paso 2 — Controles a ejecutar</h3>
     <p class="text-muted" style="margin-bottom:var(--sp-4);">
       Seleccioná los controles que querés ejecutar. Cada uno puede requerir cargar un archivo adicional.
     </p>
+
+    ${buildHelpSection()}
+
     <div class="pill-group" id="js-control-pills" style="margin-bottom:var(--sp-5);">
-      ${controls.map(ctrl => `
-        <button class="pill ${state.selectedControls.includes(ctrl.id) ? 'pill--active' : ''}"
-                data-ctrl="${ctrl.id}"
-                title="${esc(ctrl.description)}">
-          ${esc(ctrl.label)}
-        </button>
-      `).join('')}
+      ${blocksHtml}
     </div>
     <div id="js-control-files"></div>
   `;
 
-  // Toggle de selección de controles
+  // Click en sub-pill o en pill standalone: activa/desactiva ese control
   container.querySelectorAll('[data-ctrl]').forEach(pill => {
     pill.addEventListener('click', () => {
       const id  = pill.dataset.ctrl;
@@ -223,6 +372,33 @@ function renderStepControls(container, state, root) {
       } else {
         state.selectedControls.push(id);
         state.controlFiles[id] = {};
+      }
+      renderStepControls(container, state, root);
+      renderWizardNav(root, state);
+    });
+  });
+
+  // Click en el pill principal de un grupo: toggle expansión.
+  // Si el grupo tenía modos activos, los desactiva (master OFF).
+  container.querySelectorAll('[data-group]').forEach(pill => {
+    pill.addEventListener('click', () => {
+      const gid = pill.dataset.group;
+      const controlsInGroup = Object.values(CONTROL_REGISTRY)
+        .filter(c => c.group?.id === gid);
+      const activeSubs = controlsInGroup.filter(c => state.selectedControls.includes(c.id));
+
+      if (activeSubs.length > 0) {
+        // Tiene modos activos → desactiva todo y colapsa
+        for (const c of activeSubs) {
+          const i = state.selectedControls.indexOf(c.id);
+          if (i >= 0) state.selectedControls.splice(i, 1);
+          delete state.controlFiles[c.id];
+        }
+        state.expandedGroups.delete(gid);
+      } else {
+        // Sin modos activos → toggle visual
+        if (state.expandedGroups.has(gid)) state.expandedGroups.delete(gid);
+        else state.expandedGroups.add(gid);
       }
       renderStepControls(container, state, root);
       renderWizardNav(root, state);
@@ -262,26 +438,36 @@ function renderStepControls(container, state, root) {
     }
   }
 
-  // Panel de configuración de columnas del Tabulado para controles de Brutos
-  const hasBrutos = state.selectedControls.some(id => id === 'brutos' || id === 'brutos_reporte');
-  if (hasBrutos) {
-    renderBrutosTabConfig(filesArea, state, root);
+  // Panel de configuración de columnas del Tabulado para Brutos y/o GS Pers
+  const hasBrutos = state.selectedControls.some(id => BRUTOS_IDS.includes(id));
+  const hasGsPers = state.selectedControls.some(id => GS_PERS_IDS.includes(id));
+  if (hasBrutos || hasGsPers) {
+    renderTabExtraConfig(filesArea, state, root, { hasBrutos, hasGsPers });
   }
 }
 
-// ── Configuración de columnas del Tabulado para Brutos ───────────────────────
+// ── Configuración de columnas del Tabulado para Brutos / GS Pers ────────────
 
-const BRUTOS_TAB_FIELDS = [
-  { key: 'tabSalBaseColumn',     label: 'Sueldo — columna en Tabulado',            required: true  },
-  { key: 'tabACuFutAumenColumn', label: 'A_CTA_FUT_AUMEN — columna en Tabulado',   required: true  },
-  { key: 'tabNombreColumn',      label: 'Columna NOMBRE',                          required: false },
-  { key: 'tabApellido1Column',   label: 'Columna APELLIDO_1',                      required: false },
-  { key: 'tabFecAltaColumn',     label: 'Columna FECHA_ALTA',                      required: false },
-  { key: 'tabFecBajaColumn',     label: 'Columna FECHA_BAJA',                      required: false },
-  { key: 'tabFecPagoColumn',     label: 'Columna FEC_PAGO',                        required: false },
+// Campos compartidos por ambos controles (precarga con auto-detección o perfil guardado)
+const TAB_SHARED_FIELDS = [
+  { key: 'tabNombreColumn',      label: 'Columna NOMBRE',     required: false },
+  { key: 'tabApellido1Column',   label: 'Columna APELLIDO_1', required: false },
+  { key: 'tabFecAltaColumn',     label: 'Columna FECHA_ALTA', required: false },
+  { key: 'tabFecBajaColumn',     label: 'Columna FECHA_BAJA', required: false },
+  { key: 'tabFecPagoColumn',     label: 'Columna FEC_PAGO',   required: false },
 ];
 
-function autoDetectBrutosTabConfig(tabHeaders) {
+const TAB_BRUTOS_FIELDS = [
+  { key: 'tabSalBaseColumn',     label: 'Sueldo — columna en Tabulado',          required: true },
+  { key: 'tabACuFutAumenColumn', label: 'A_CTA_FUT_AUMEN — columna en Tabulado', required: true },
+];
+
+const TAB_GS_PERS_FIELDS = [
+  { key: 'tabGtosPersonalesColumn', label: 'GTOS_PERSONALES — columna en Tabulado', required: true },
+  { key: 'tabDtoCocheraColumn',     label: 'DTO_COCHERA — columna en Tabulado',      required: true },
+];
+
+function autoDetectTabExtraConfig(tabHeaders) {
   const lc = h => String(h).toLowerCase();
   const find = (...kws) => tabHeaders.find(h => kws.some(kw => lc(h).includes(lc(kw)))) || '';
 
@@ -289,25 +475,39 @@ function autoDetectBrutosTabConfig(tabHeaders) {
   const apellido = find('apellido');
 
   return {
-    tabSalBaseColumn:     find('sueldo', '1003-'),
-    tabACuFutAumenColumn: find('a_cta_fut', 'acta_fut', '1017-', 'a cta fut'),
-    tabNombreColumn:      (nombre && nombre !== apellido) ? nombre : '',
-    tabApellido1Column:   (apellido && apellido !== nombre) ? apellido : '',
-    tabFecAltaColumn:     find('fecha_alta', 'fec_alta', 'f_alta', 'alta'),
-    tabFecBajaColumn:     find('fecha_baja', 'fec_baja', 'f_baja', 'baja'),
-    tabFecPagoColumn:     find('fec_pago', 'fecha_pago', 'pago'),
+    tabSalBaseColumn:        find('sueldo', '1003-'),
+    tabACuFutAumenColumn:    find('a_cta_fut', 'acta_fut', '1017-', 'a cta fut'),
+    tabGtosPersonalesColumn: find('gtos_personales', 'gastos_personales', 'gtos pers', 'gastos pers'),
+    tabDtoCocheraColumn:     find('dto_cochera', 'dto cochera', 'cochera'),
+    tabNombreColumn:         (nombre && nombre !== apellido) ? nombre : '',
+    tabApellido1Column:      (apellido && apellido !== nombre) ? apellido : '',
+    tabFecAltaColumn:        find('fecha_alta', 'fec_alta', 'f_alta', 'alta'),
+    tabFecBajaColumn:        find('fecha_baja', 'fec_baja', 'f_baja', 'baja'),
+    tabFecPagoColumn:        find('fec_pago', 'fecha_pago', 'pago'),
   };
 }
 
-function renderBrutosTabConfig(container, state, root) {
+function renderTabExtraConfig(container, state, root, { hasBrutos, hasGsPers }) {
   const tabHeaders = state.tab?.parsedRows?.length > 0
     ? Object.keys(state.tab.parsedRows[0])
     : [];
 
   // Auto-detectar solo si el config está vacío
-  if (tabHeaders.length > 0 && !Object.values(state.brutosTabConfig).some(Boolean)) {
-    Object.assign(state.brutosTabConfig, autoDetectBrutosTabConfig(tabHeaders));
+  if (tabHeaders.length > 0 && !Object.values(state.tabExtraConfig).some(Boolean)) {
+    Object.assign(state.tabExtraConfig, autoDetectTabExtraConfig(tabHeaders));
   }
+
+  // Construir lista de campos a mostrar según los controles seleccionados.
+  // Los campos específicos de cada control van primero (obligatorios), después los compartidos.
+  const fields = [
+    ...(hasBrutos ? TAB_BRUTOS_FIELDS  : []),
+    ...(hasGsPers ? TAB_GS_PERS_FIELDS : []),
+    ...TAB_SHARED_FIELDS,
+  ];
+
+  const headerTitle = (hasBrutos && hasGsPers) ? 'Brutos y GS Pers'
+    : hasBrutos ? 'Brutos'
+    : 'GS Pers';
 
   const opts = (selected = '') =>
     ['', ...tabHeaders]
@@ -317,14 +517,14 @@ function renderBrutosTabConfig(container, state, root) {
   const panel = document.createElement('div');
   panel.style.cssText = 'margin-top:var(--sp-6);padding:var(--sp-5);border:1px solid var(--color-border);border-radius:var(--radius-md);background:var(--color-surface);';
   panel.innerHTML = `
-    <h4 style="margin:0 0 var(--sp-2);">Columnas del Tabulado — Brutos</h4>
+    <h4 style="margin:0 0 var(--sp-2);">Columnas del Tabulado — ${esc(headerTitle)}</h4>
     <p class="text-muted" style="margin:0 0 var(--sp-4);font-size:var(--text-sm);">
-      Indicá qué columna del Tabulado corresponde a cada campo de Brutos.
+      Indicá qué columna del Tabulado corresponde a cada campo.
       FECHA_INI y FECHA_FIN se calculan automáticamente del período seleccionado.
     </p>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:var(--sp-3);">
-      ${BRUTOS_TAB_FIELDS.map(f => {
-        const val  = state.brutosTabConfig[f.key] || '';
+      ${fields.map(f => {
+        const val  = state.tabExtraConfig[f.key] || '';
         const warn = f.required && !val;
         return `
           <div class="form-group" style="margin-bottom:0;">
@@ -332,7 +532,7 @@ function renderBrutosTabConfig(container, state, root) {
               ${esc(f.label)}
               ${warn ? '<span style="color:#B45309;font-size:.8em;"> ⚠ requerida</span>' : ''}
             </label>
-            <select class="form-select" data-brutos-key="${esc(f.key)}"${warn ? ' style="border-color:#EAB308;"' : ''}>
+            <select class="form-select" data-tab-extra-key="${esc(f.key)}"${warn ? ' style="border-color:#EAB308;"' : ''}>
               ${opts(val)}
             </select>
           </div>
@@ -341,11 +541,11 @@ function renderBrutosTabConfig(container, state, root) {
     </div>
   `;
 
-  panel.querySelectorAll('[data-brutos-key]').forEach(sel => {
+  panel.querySelectorAll('[data-tab-extra-key]').forEach(sel => {
     sel.addEventListener('change', () => {
-      const k = sel.dataset.brutosKey;
-      if (sel.value) state.brutosTabConfig[k] = sel.value;
-      else delete state.brutosTabConfig[k];
+      const k = sel.dataset.tabExtraKey;
+      if (sel.value) state.tabExtraConfig[k] = sel.value;
+      else delete state.tabExtraConfig[k];
       renderWizardNav(root, state);
     });
   });
@@ -445,10 +645,14 @@ async function executeControls(state, statusEl) {
       runId, 'tab_control', tab.fileName, tab.parsedRows, tab.parseMetadata, tab.mapping
     );
 
-    // 3. Guardar config de Brutos si aplica
-    const hasBrutos = state.selectedControls.some(id => id === 'brutos' || id === 'brutos_reporte');
-    if (hasBrutos && Object.keys(state.brutosTabConfig).length > 0) {
-      await saveFileProfile(state.clientId, 'brutos_tab_config', state.brutosTabConfig);
+    // 3. Guardar config extra del Tabulado (Brutos / GS Pers) si aplica
+    const needsTabExtra = state.selectedControls.some(id =>
+      BRUTOS_IDS.includes(id) || GS_PERS_IDS.includes(id)
+    );
+    if (needsTabExtra && Object.keys(state.tabExtraConfig).length > 0) {
+      // La clave de profile se mantiene como 'brutos_tab_config' por compatibilidad
+      // histórica con perfiles ya guardados; el objeto ahora contiene campos de ambos.
+      await saveFileProfile(state.clientId, 'brutos_tab_config', state.tabExtraConfig);
     }
 
     // 4. Por cada control: guardar archivos adicionales y ejecutar lógica
@@ -467,9 +671,9 @@ async function executeControls(state, statusEl) {
         }
       }
 
-      // Armar mapping: tab + brutosTabConfig (si aplica) + archivos adicionales + período
+      // Armar mapping: tab + tabExtraConfig (si aplica) + archivos adicionales + período
       const mapping = {
-        tab:    { ...(tab.mapping || {}), ...state.brutosTabConfig },
+        tab:    { ...(tab.mapping || {}), ...state.tabExtraConfig },
         period: state.period,
       };
       for (const fileSpec of ctrl.additionalFiles) {

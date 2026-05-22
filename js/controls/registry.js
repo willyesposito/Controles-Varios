@@ -10,6 +10,8 @@
 //   description     — descripción breve
 //   tabRequired     — si necesita el Tabulado como archivo pivote
 //   additionalFiles — archivos adicionales requeridos: [{ key, label, fileType }]
+//   group           — { id, label, mode } para agrupar variantes del mismo control bajo una pill
+//                     Si está, se renderiza dentro del grupo. Si falta, el control es standalone.
 //   run(primaryRows, tabRows, mapping) → resultados
 //   summarize(results)                 → { status, headline, insights[] } para la tarjeta colapsada
 //   renderResults(results, container)  → HTML del detalle dentro del container
@@ -29,6 +31,15 @@ import {
   summarizeBrutosReporte,
 } from './brutos.js';
 
+import {
+  runGsPers,
+  renderGsPersResults,
+  summarizeGsPers,
+  runGsPersReporte,
+  renderGsPersReporteResults,
+  summarizeGsPersReporte,
+} from './gsPers.js';
+
 export const CONTROL_REGISTRY = {
 
   cat_x_empleados: {
@@ -36,6 +47,15 @@ export const CONTROL_REGISTRY = {
     label:       'EE x CATEG',
     description: 'Empleados por Categoría. Compara el catálogo del sistema contra el Tabulado: '
       + 'valida activos, diferencias de cantidad, discrepancias de campo y distribución por puesto y centro de costo.',
+    help: {
+      what: 'Compara la lista de empleados del sistema de RRHH contra el Tabulado. '
+        + 'Detecta empleados que están en uno y no en el otro, y diferencias en campos como puesto y centro de costo.',
+      how: [
+        'Bajá el reporte de Empleados por Categoría de M4.',
+        'Cargalo en el Paso 2 cuando te lo pida.',
+        'Ejecutá. El sistema cruza automáticamente los legajos.',
+      ],
+    },
     tabRequired: true,
     additionalFiles: [
       { key: 'cat', label: 'Empleados por Categoría', fileType: 'cat_empleados' },
@@ -49,8 +69,19 @@ export const CONTROL_REGISTRY = {
     id:          'brutos',
     label:       'Brutos — Controlar',
     description: 'Cruza SAL_BASE y A_CTA_FUT_AUMEN del Reporte de Brutos contra '
-      + 'las columnas configuradas en el Tabulado (SUELDO y A_CTA_FUT_AUMEN). '
-      + 'Requiere el archivo de Brutos y el Tabulado con las columnas de Brutos configuradas.',
+      + 'las columnas configuradas en el Tabulado (SUELDO y A_CTA_FUT_AUMEN).',
+    help: {
+      what: 'Toma el Reporte de Brutos bajado de M4 y verifica que los valores de '
+        + 'SAL_BASE y A_CTA_FUT_AUMEN coincidan con las columnas del Tabulado. '
+        + 'Muestra en rojo los empleados con diferencias.',
+      how: [
+        'Bajá el Reporte de Brutos de M4.',
+        'Cargalo en el Paso 2 cuando te lo pida.',
+        'En el panel de configuración indicá qué columnas del Tabulado corresponden a Sueldo y A_CTA_FUT_AUMEN.',
+        'Ejecutá.',
+      ],
+    },
+    group:       { id: 'brutos', label: 'Brutos', mode: 'Controlar' },
     tabRequired: true,
     additionalFiles: [
       { key: 'brutos', label: 'Reporte de Brutos', fileType: 'brutos_file' },
@@ -64,14 +95,70 @@ export const CONTROL_REGISTRY = {
     id:          'brutos_reporte',
     label:       'Brutos — Generar Reporte',
     description: 'Genera el Reporte de Brutos directamente desde el Tabulado, '
-      + 'sin necesitar el archivo de Brutos. '
-      + 'El Tabulado debe tener configuradas las columnas de la sección Brutos. '
-      + 'Exporta a .xlsx sin columnas de control ni colores.',
+      + 'sin necesitar el archivo de Brutos.',
+    help: {
+      what: 'Genera el archivo de Brutos directamente desde el Tabulado, '
+        + 'sin necesitar bajar el reporte de M4. '
+        + 'Útil para armar el archivo en el formato estándar o comparar períodos.',
+      how: [
+        'En el panel de configuración del Paso 2 indicá qué columnas del Tabulado corresponden a Sueldo y A_CTA_FUT_AUMEN.',
+        'Ejecutá.',
+        'Descargá el .xlsx generado desde el resultado.',
+      ],
+    },
+    group:       { id: 'brutos', label: 'Brutos', mode: 'Generar Reporte' },
     tabRequired: true,
     additionalFiles: [],
     run:           runBrutosReporte,
     summarize:     summarizeBrutosReporte,
     renderResults: renderBrutosReporteResults,
+  },
+
+  gs_pers: {
+    id:          'gs_pers',
+    label:       'GS Pers — Controlar',
+    description: 'Cruza GTOS_PERSONALES y DTO_COCHERA del Reporte de Gastos Personales y Cochera '
+      + 'contra las columnas configuradas en el Tabulado.',
+    help: {
+      what: 'Toma el Reporte de Gastos Personales y Cochera de M4 y compara los valores de '
+        + 'GTOS_PERSONALES y DTO_COCHERA contra las columnas del Tabulado. '
+        + 'Muestra en rojo los empleados con diferencias.',
+      how: [
+        'Bajá el Reporte de Gastos Personales y Cochera de M4.',
+        'Cargalo en el Paso 2 cuando te lo pida.',
+        'En el panel de configuración indicá qué columnas del Tabulado corresponden a GTOS_PERSONALES y DTO_COCHERA.',
+        'Ejecutá.',
+      ],
+    },
+    group:       { id: 'gs_pers', label: 'GS Pers', mode: 'Controlar' },
+    tabRequired: true,
+    additionalFiles: [
+      { key: 'gs_pers', label: 'Reporte de GS Pers', fileType: 'gs_pers_file' },
+    ],
+    run:           runGsPers,
+    summarize:     summarizeGsPers,
+    renderResults: renderGsPersResults,
+  },
+
+  gs_pers_reporte: {
+    id:          'gs_pers_reporte',
+    label:       'GS Pers — Generar Reporte',
+    description: 'Genera el Reporte de Gastos Personales y Cochera directamente desde el Tabulado.',
+    help: {
+      what: 'Genera el archivo de GS Pers directamente desde el Tabulado, '
+        + 'sin necesitar bajar el reporte de M4.',
+      how: [
+        'En el panel de configuración del Paso 2 indicá qué columnas del Tabulado corresponden a GTOS_PERSONALES y DTO_COCHERA.',
+        'Ejecutá.',
+        'Descargá el .xlsx generado desde el resultado.',
+      ],
+    },
+    group:       { id: 'gs_pers', label: 'GS Pers', mode: 'Generar Reporte' },
+    tabRequired: true,
+    additionalFiles: [],
+    run:           runGsPersReporte,
+    summarize:     summarizeGsPersReporte,
+    renderResults: renderGsPersReporteResults,
   },
 
 };

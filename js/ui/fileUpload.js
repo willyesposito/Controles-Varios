@@ -7,6 +7,7 @@ import { parseResumenTabulado } from '../parsers/resumenTabuladoHorizontalExcel.
 import { parseTabuladoControl } from '../parsers/tabuladoControl.js';
 import { parseCatEmpleados } from '../parsers/catEmpleados.js';
 import { parseBrutos } from '../parsers/brutosParser.js';
+import { parseGsPers } from '../parsers/gsPersParser.js';
 import { getFileProfile, saveFileProfile } from '../db.js';
 
 // Campos "estándar" por tipo de archivo.
@@ -52,6 +53,11 @@ const FIELD_DEFS = {
     { key: 'legajoColumn',          label: 'Columna de Legajo',                  required: true  },
     { key: 'salBaseColumn',         label: 'Columna de SAL_BASE',                required: false },
     { key: 'aCuFutAumenColumn',     label: 'Columna de A_CTA_FUT_AUMEN',         required: false },
+  ],
+  gs_pers_file: [
+    { key: 'legajoColumn',          label: 'Columna de Legajo',                  required: true  },
+    { key: 'gtosPersonalesColumn',  label: 'Columna de GTOS_PERSONALES',         required: false },
+    { key: 'dtoCocheraColumn',      label: 'Columna de DTO_COCHERA',             required: false },
   ],
 };
 
@@ -261,7 +267,7 @@ function renderAlreadyLoaded(container, existingData, onReplace, onComplete) {
     const fil = parseMetadata?.filtradas ?? 0;
     metaLine = `${parseMetadata?.activos ?? 0} activos de ${parseMetadata?.total ?? 0} filas`
       + (fil > 0 ? ` &nbsp;·&nbsp; <span class="badge badge--warning">${fil} sumatorias excluidas</span>` : '');
-  } else if (fileType === 'tab_control' || fileType === 'brutos_file') {
+  } else if (fileType === 'tab_control' || fileType === 'brutos_file' || fileType === 'gs_pers_file') {
     metaLine = `${parseMetadata?.totalRows ?? 0} registros`;
   } else {
     metaLine = `${parseMetadata?.uniqueLegajos ?? 0} legajos · ${parseMetadata?.detectedConcepts?.length ?? 0} conceptos`;
@@ -316,17 +322,43 @@ function renderMappingForm(container, { headers, preview, fileType, savedMapping
     .map(h => `<option value="${escHtml(h)}" ${h === selected ? 'selected' : ''}>${escHtml(h) || '— Seleccioná —'}</option>`)
     .join('');
 
-  // Campos estándar en grid horizontal para reducir el scroll vertical
-  // Un campo queda en amarillo si había un mapping (auto o guardado) pero ese campo quedó sin asignar.
+  // matchLevel: calidad del match pre-completado para un campo.
+  //   'exact'  — auto-detectado en este archivo (nombre de columna idéntico encontrado)
+  //   'saved'  — viene de sesión anterior (perfil guardado, no auto-detectado)
+  //   'warn'   — había un mapping anterior pero el campo quedó vacío
+  //   'none'   — sin mapping previo
+  const matchLevel = (val) => {
+    if (autoDetected && val)              return 'exact';
+    if (!autoDetected && savedMapping && val) return 'saved';
+    if (savedMapping && !val)             return 'warn';
+    return 'none';
+  };
+
+  const fieldStyle = (level) => {
+    if (level === 'exact') return 'border-color:var(--color-match-exact);background:var(--color-match-exact-bg);';
+    if (level === 'saved') return 'border-color:var(--color-match-saved);background:var(--color-match-saved-bg);';
+    if (level === 'warn')  return 'border-color:#EAB308;background:rgba(234,179,8,0.08);';
+    return '';
+  };
+
+  const fieldBadge = (level) => {
+    if (level === 'exact') return ' <span style="color:var(--color-match-exact);font-size:0.75em;font-weight:600;">✓ auto</span>';
+    if (level === 'saved') return ' <span style="color:var(--color-match-saved);font-size:0.75em;">↺ sesión anterior</span>';
+    if (level === 'warn')  return ' <span style="color:#B45309;font-size:0.8em;">⚠ sin asignar</span>';
+    return '';
+  };
+
+  // Campos estándar en grid horizontal
   const stdFieldsHtml = fields.length === 0 ? '' : `
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:var(--sp-3) var(--sp-5);margin-bottom:var(--sp-5);">
       ${fields.map(f => {
-        const val  = savedMapping?.[f.key] || '';
-        const warn = !!savedMapping && !val;
+        const val   = savedMapping?.[f.key] || '';
+        const level = matchLevel(val);
+        const style = fieldStyle(level);
         return `
           <div class="form-group" style="margin-bottom:0;">
-            <label class="form-label ${f.required ? 'form-label--required' : ''}">${f.label}${warn ? ' <span style="color:#B45309;font-size:0.8em;">⚠ sin asignar</span>' : ''}</label>
-            <select class="form-select" name="${f.key}"${warn ? ' style="border-color:#EAB308;background:rgba(234,179,8,0.08);"' : ''}>
+            <label class="form-label ${f.required ? 'form-label--required' : ''}">${f.label}${fieldBadge(level)}</label>
+            <select class="form-select" name="${f.key}"${style ? ` style="${style}"` : ''}>
               ${opts(val)}
             </select>
           </div>
@@ -468,6 +500,7 @@ function parseFile(arrayBuffer, fileType, mapping) {
     case 'tab_control':                 return parseTabuladoControl(arrayBuffer, mapping);
     case 'cat_empleados':               return parseCatEmpleados(arrayBuffer, mapping);
     case 'brutos_file':                 return parseBrutos(arrayBuffer, mapping);
+    case 'gs_pers_file':                return parseGsPers(arrayBuffer, mapping);
     default: throw new Error(`Tipo de archivo desconocido: "${fileType}".`);
   }
 }
@@ -480,6 +513,7 @@ function fileTypeLabel(fileType) {
     tab_control:                 'Tabulado (Controles)',
     cat_empleados:               'Catálogo de Empleados',
     brutos_file:                 'Reporte de Brutos',
+    gs_pers_file:                'Reporte de GS Pers (Gastos Personales y Cochera)',
   }[fileType] || fileType;
 }
 
