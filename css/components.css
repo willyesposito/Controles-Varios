@@ -150,6 +150,28 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--sp-2);
+  align-items: center;
+}
+
+/* Grupo de un control con sub-modos (ej: Brutos → Controlar / Generar) */
+.control-group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+.control-group__modes {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  padding-left: var(--sp-3);
+  margin-left: var(--sp-1);
+  border-left: 2px solid var(--color-border);
+}
+.pill--sub {
+  padding: 4px var(--sp-3);
+  font-size: var(--text-xs);
 }
 
 /* ── Badge / Tag ─────────────────────────────────────────────── */
