@@ -8,6 +8,7 @@ import { parseTabuladoControl } from '../parsers/tabuladoControl.js';
 import { parseCatEmpleados } from '../parsers/catEmpleados.js';
 import { parseBrutos } from '../parsers/brutosParser.js';
 import { parseGsPers } from '../parsers/gsPersParser.js';
+import { parseNr }     from '../parsers/nrParser.js';
 import { getFileProfile, saveFileProfile } from '../db.js';
 
 // Campos "estándar" por tipo de archivo.
@@ -58,6 +59,27 @@ const FIELD_DEFS = {
     { key: 'legajoColumn',          label: 'Columna de Legajo',                  required: true  },
     { key: 'gtosPersonalesColumn',  label: 'Columna de GTOS_PERSONALES',         required: false },
     { key: 'dtoCocheraColumn',      label: 'Columna de DTO_COCHERA',             required: false },
+  ],
+  nr_file: [
+    { key: 'legajoColumn',          label: 'Columna de Legajo',                  required: true  },
+    { key: 'reinHomeOficeColumn',   label: 'Columna de REIN_HOME_OFICE',         required: false },
+    { key: 'indemPreavisoColumn',   label: 'Columna de INDEM_PREAVISO',          required: false },
+    { key: 'sacPreavisoColumn',     label: 'Columna de SAC_PREAVISO',            required: false },
+    { key: 'indemAntDespColumn',    label: 'Columna de INDEM_ANT_DESP',          required: false },
+    { key: 'indemAntFalleColumn',   label: 'Columna de INDEM_ANT_FALLE',         required: false },
+    { key: 'indemIntegColumn',      label: 'Columna de INDEM_INTEG',             required: false },
+    { key: 'sacIndemIntegColumn',   label: 'Columna de SAC_INDEM_INTEG',         required: false },
+    { key: 'indmMaternidadColumn',  label: 'Columna de INDM_MATERNIDAD',         required: false },
+    { key: 'vacNoGozadasColumn',    label: 'Columna de VAC_NO_GOZADAS',          required: false },
+    { key: 'vacNoGozSacColumn',     label: 'Columna de VAC_NO_GOZ_SAC',          required: false },
+    { key: 'gratVacColumn',         label: 'Columna de GRAT_VAC',                required: false },
+    { key: 'graVacnogSacColumn',    label: 'Columna de GRA_VACNOG_SAC',          required: false },
+    { key: 'indemFuerMayColumn',    label: 'Columna de INDEM_FUER_MAY',          required: false },
+    { key: 'indemEmbarazoColumn',   label: 'Columna de INDEM_EMBARAZO',          required: false },
+    { key: 'gratExtraordColumn',    label: 'Columna de GRAT_EXTRAORD',           required: false },
+    { key: 'asigPasColumn',         label: 'Columna de ASIG_PAS',               required: false },
+    { key: 'reintGuardColumn',      label: 'Columna de REINT_GUARD',             required: false },
+    { key: 'incrementoStColumn',    label: 'Columna de INCREMENTO_ST',           required: false },
   ],
 };
 
@@ -267,7 +289,7 @@ function renderAlreadyLoaded(container, existingData, onReplace, onComplete) {
     const fil = parseMetadata?.filtradas ?? 0;
     metaLine = `${parseMetadata?.activos ?? 0} activos de ${parseMetadata?.total ?? 0} filas`
       + (fil > 0 ? ` &nbsp;·&nbsp; <span class="badge badge--warning">${fil} sumatorias excluidas</span>` : '');
-  } else if (fileType === 'tab_control' || fileType === 'brutos_file' || fileType === 'gs_pers_file') {
+  } else if (fileType === 'tab_control' || fileType === 'brutos_file' || fileType === 'gs_pers_file' || fileType === 'nr_file') {
     metaLine = `${parseMetadata?.totalRows ?? 0} registros`;
   } else {
     metaLine = `${parseMetadata?.uniqueLegajos ?? 0} legajos · ${parseMetadata?.detectedConcepts?.length ?? 0} conceptos`;
@@ -368,6 +390,13 @@ function renderMappingForm(container, { headers, preview, fileType, savedMapping
   `;
 
   // Sección especial de nombre (solo para formatos tabulados)
+  const valNAC = savedMapping?.nombreApellidoColumn || '';
+  const valAp  = savedMapping?.apellidoColumn || '';
+  const valNm  = savedMapping?.nombreColumn || '';
+  const lvlNAC = matchLevel(valNAC);
+  const lvlAp  = matchLevel(valAp);
+  const lvlNm  = matchLevel(valNm);
+
   const nombreHtml = conNombre ? `
     <div class="form-group" style="margin-top:var(--sp-2);">
       <label class="form-label">Apellido y nombre del empleado</label>
@@ -393,24 +422,24 @@ function renderMappingForm(container, { headers, preview, fileType, savedMapping
 
       <!-- Modo: una sola columna -->
       <div id="js-nombre-junto" style="display:${savedNombreMode === 'junto' ? 'block' : 'none'};">
-        <label class="form-label">Columna con el nombre completo</label>
-        <select class="form-select" name="nombreApellidoColumn" style="max-width:360px;">
-          ${opts(savedMapping?.nombreApellidoColumn || '')}
+        <label class="form-label">Columna con el nombre completo${fieldBadge(lvlNAC)}</label>
+        <select class="form-select" name="nombreApellidoColumn" style="max-width:360px;${fieldStyle(lvlNAC)}">
+          ${opts(valNAC)}
         </select>
       </div>
 
       <!-- Modo: columnas separadas -->
       <div id="js-nombre-separado" style="display:${savedNombreMode === 'separado' ? 'block' : 'none'};">
         <div class="form-group">
-          <label class="form-label">Columna de Apellido</label>
-          <select class="form-select" name="apellidoColumn" style="max-width:360px;">
-            ${opts(savedMapping?.apellidoColumn || '')}
+          <label class="form-label">Columna de Apellido${fieldBadge(lvlAp)}</label>
+          <select class="form-select" name="apellidoColumn" style="max-width:360px;${fieldStyle(lvlAp)}">
+            ${opts(valAp)}
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Columna de Nombre</label>
-          <select class="form-select" name="nombreColumn" style="max-width:360px;">
-            ${opts(savedMapping?.nombreColumn || '')}
+          <label class="form-label">Columna de Nombre${fieldBadge(lvlNm)}</label>
+          <select class="form-select" name="nombreColumn" style="max-width:360px;${fieldStyle(lvlNm)}">
+            ${opts(valNm)}
           </select>
         </div>
       </div>
@@ -501,6 +530,7 @@ function parseFile(arrayBuffer, fileType, mapping) {
     case 'cat_empleados':               return parseCatEmpleados(arrayBuffer, mapping);
     case 'brutos_file':                 return parseBrutos(arrayBuffer, mapping);
     case 'gs_pers_file':                return parseGsPers(arrayBuffer, mapping);
+    case 'nr_file':                     return parseNr(arrayBuffer, mapping);
     default: throw new Error(`Tipo de archivo desconocido: "${fileType}".`);
   }
 }
@@ -514,7 +544,35 @@ function fileTypeLabel(fileType) {
     cat_empleados:               'Catálogo de Empleados',
     brutos_file:                 'Reporte de Brutos',
     gs_pers_file:                'Reporte de GS Pers (Gastos Personales y Cochera)',
+    nr_file:                     'Reporte de NR (No Remunerativos)',
   }[fileType] || fileType;
+}
+
+// ── Helpers de calidad de match para selects de columnas ─────────────────────
+// matchLevel: devuelve 'exact' | 'saved' | 'warn' | 'none'
+//   exact  — valor pre-completado por auto-detección en esta carga
+//   saved  — valor pre-completado desde el perfil de sesión anterior
+//   warn   — había mapping pero el campo quedó vacío
+//   none   — sin dato previo
+export function matchLevel(val, { autoDetected, hasSavedMapping }) {
+  if (autoDetected && val)              return 'exact';
+  if (!autoDetected && hasSavedMapping && val) return 'saved';
+  if (hasSavedMapping && !val)          return 'warn';
+  return 'none';
+}
+
+export function matchSelectStyle(level) {
+  if (level === 'exact') return 'border-color:var(--color-match-exact);background:var(--color-match-exact-bg);';
+  if (level === 'saved') return 'border-color:var(--color-match-saved);background:var(--color-match-saved-bg);';
+  if (level === 'warn')  return 'border-color:#EAB308;background:rgba(234,179,8,0.08);';
+  return '';
+}
+
+export function matchBadge(level) {
+  if (level === 'exact') return ' <span style="color:var(--color-match-exact);font-size:0.75em;font-weight:600;">✓ auto</span>';
+  if (level === 'saved') return ' <span style="color:var(--color-match-saved);font-size:0.75em;">↺ sesión anterior</span>';
+  if (level === 'warn')  return ' <span style="color:#B45309;font-size:0.8em;">⚠ sin asignar</span>';
+  return '';
 }
 
 function fmtPreviewCell(val) {

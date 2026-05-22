@@ -14,12 +14,13 @@ import {
   getFileProfile,
   saveFileProfile,
 } from '../db.js';
-import { initFileUploadStep }      from './fileUpload.js';
+import { initFileUploadStep, matchLevel, matchSelectStyle, matchBadge } from './fileUpload.js';
 import { CONTROL_REGISTRY }        from '../controls/registry.js';
 import { autoDetectTabMapping }    from '../parsers/tabuladoControl.js';
 import { autoDetectCatMapping }    from '../parsers/catEmpleados.js';
 import { autoDetectBrutosMapping } from '../parsers/brutosParser.js';
 import { autoDetectGsPersMapping } from '../parsers/gsPersParser.js';
+import { autoDetectNrMapping }    from '../parsers/nrParser.js';
 import { currentPeriod, periodOptions } from '../utils/dates.js';
 
 // Mapa: fileType → función de auto-detección de columnas
@@ -28,11 +29,13 @@ const AUTO_DETECT = {
   cat_empleados: autoDetectCatMapping,
   brutos_file:   autoDetectBrutosMapping,
   gs_pers_file:  autoDetectGsPersMapping,
+  nr_file:       autoDetectNrMapping,
 };
 
 // IDs de controles agrupados (para validación y detección de grupos seleccionados)
 const BRUTOS_IDS  = ['brutos', 'brutos_reporte'];
 const GS_PERS_IDS = ['gs_pers', 'gs_pers_reporte'];
+const NR_IDS      = ['nr', 'nr_reporte'];
 
 export async function renderControlsWizard(root, clientId) {
   const client = await getClient(clientId);
@@ -60,8 +63,9 @@ export async function renderControlsWizard(root, clientId) {
     notes:            '',
     // tabExtraConfig: columnas adicionales del Tabulado para Brutos y GS Pers
     // (se persiste bajo la clave 'brutos_tab_config' por compatibilidad histórica).
-    tabExtraConfig:   savedBrutosConfig?.mapping || {},
-    expandedGroups:   new Set(),  // grupos de controles cuyo panel de modos está abierto
+    tabExtraConfig:            savedBrutosConfig?.mapping || {},
+    tabExtraConfigAutoDetected: false,
+    expandedGroups:            new Set(),  // grupos de controles cuyo panel de modos está abierto
   };
 
   root.innerHTML = `
@@ -173,6 +177,16 @@ function canGoNext(state) {
       const hasGsPers = state.selectedControls.some(id => GS_PERS_IDS.includes(id));
       if (hasGsPers) {
         if (!cfg.tabGtosPersonalesColumn || !cfg.tabDtoCocheraColumn) return false;
+      }
+      // Si hay controles de NR, los 20 campos extra son obligatorios
+      const hasNr = state.selectedControls.some(id => NR_IDS.includes(id));
+      if (hasNr) {
+        const nrRequired = [
+          ...TAB_NR_EXTRA_FIELDS,
+          ...TAB_NR_INDEM_FIELDS,
+          ...TAB_NR_OTROS_FIELDS,
+        ].map(f => f.key);
+        if (nrRequired.some(k => !cfg[k])) return false;
       }
       return true;
     }
@@ -438,11 +452,12 @@ function renderStepControls(container, state, root) {
     }
   }
 
-  // Panel de configuración de columnas del Tabulado para Brutos y/o GS Pers
+  // Panel de configuración de columnas del Tabulado para Brutos, GS Pers y/o NR
   const hasBrutos = state.selectedControls.some(id => BRUTOS_IDS.includes(id));
   const hasGsPers = state.selectedControls.some(id => GS_PERS_IDS.includes(id));
-  if (hasBrutos || hasGsPers) {
-    renderTabExtraConfig(filesArea, state, root, { hasBrutos, hasGsPers });
+  const hasNr     = state.selectedControls.some(id => NR_IDS.includes(id));
+  if (hasBrutos || hasGsPers || hasNr) {
+    renderTabExtraConfig(filesArea, state, root, { hasBrutos, hasGsPers, hasNr });
   }
 }
 
@@ -467,47 +482,124 @@ const TAB_GS_PERS_FIELDS = [
   { key: 'tabDtoCocheraColumn',     label: 'DTO_COCHERA — columna en Tabulado',      required: true },
 ];
 
+const TAB_NR_EXTRA_FIELDS = [
+  { key: 'tabIdCentroTrabColumn', label: 'ID_CENTRO_TRAB — columna en Tabulado', required: true },
+  { key: 'tabIdCategoriaColumn',  label: 'ID_CATEGORIA — columna en Tabulado',   required: true },
+];
+
+const TAB_NR_INDEM_FIELDS = [
+  { key: 'tabIndemPreavisoColumn',  label: 'INDEM_PREAVISO — columna en Tabulado',  required: true },
+  { key: 'tabSacPreavisoColumn',    label: 'SAC_PREAVISO — columna en Tabulado',    required: true },
+  { key: 'tabIndemAntDespColumn',   label: 'INDEM_ANT_DESP — columna en Tabulado',  required: true },
+  { key: 'tabIndemAntFalleColumn',  label: 'INDEM_ANT_FALLE — columna en Tabulado', required: true },
+  { key: 'tabIndemIntegColumn',     label: 'INDEM_INTEG — columna en Tabulado',     required: true },
+  { key: 'tabSacIndemIntegColumn',  label: 'SAC_INDEM_INTEG — columna en Tabulado', required: true },
+  { key: 'tabIndmMaternidadColumn', label: 'INDM_MATERNIDAD — columna en Tabulado', required: true },
+  { key: 'tabVacNoGozadasColumn',   label: 'VAC_NO_GOZADAS — columna en Tabulado',  required: true },
+  { key: 'tabVacNoGozSacColumn',    label: 'VAC_NO_GOZ_SAC — columna en Tabulado',  required: true },
+  { key: 'tabGratVacColumn',        label: 'GRAT_VAC — columna en Tabulado',        required: true },
+  { key: 'tabGraVacnogSacColumn',   label: 'GRA_VACNOG_SAC — columna en Tabulado',  required: true },
+  { key: 'tabIndemFuerMayColumn',   label: 'INDEM_FUER_MAY — columna en Tabulado',  required: true },
+  { key: 'tabIndemEmbarazoColumn',  label: 'INDEM_EMBARAZO — columna en Tabulado',  required: true },
+];
+
+const TAB_NR_OTROS_FIELDS = [
+  { key: 'tabReinHomeOficeColumn',  label: 'REIN_HOME_OFICE — columna en Tabulado', required: true },
+  { key: 'tabGratExtraordColumn',   label: 'GRAT_EXTRAORD — columna en Tabulado',   required: true },
+  { key: 'tabAsigPasColumn',        label: 'ASIG_PAS — columna en Tabulado',        required: true },
+  { key: 'tabReintGuardColumn',     label: 'REINT_GUARD — columna en Tabulado',     required: true },
+  { key: 'tabIncrementoStColumn',   label: 'INCREMENTO_ST — columna en Tabulado',   required: true },
+];
+
 function autoDetectTabExtraConfig(tabHeaders) {
-  const lc = h => String(h).toLowerCase();
-  const find = (...kws) => tabHeaders.find(h => kws.some(kw => lc(h).includes(lc(kw)))) || '';
+  const lc      = h => String(h).toLowerCase();
+  const find    = (...kws) => tabHeaders.find(h => kws.some(kw => lc(h).includes(lc(kw)))) || '';
+  const findExact = (...kws) => tabHeaders.find(h => kws.some(kw => lc(h) === lc(kw))) || '';
 
   const nombre   = find('nombre');
   const apellido = find('apellido');
 
   return {
+    // Brutos
     tabSalBaseColumn:        find('sueldo', '1003-'),
     tabACuFutAumenColumn:    find('a_cta_fut', 'acta_fut', '1017-', 'a cta fut'),
+    // GS Pers
     tabGtosPersonalesColumn: find('gtos_personales', 'gastos_personales', 'gtos pers', 'gastos pers'),
     tabDtoCocheraColumn:     find('dto_cochera', 'dto cochera', 'cochera'),
+    // Compartidos
     tabNombreColumn:         (nombre && nombre !== apellido) ? nombre : '',
     tabApellido1Column:      (apellido && apellido !== nombre) ? apellido : '',
     tabFecAltaColumn:        find('fecha_alta', 'fec_alta', 'f_alta', 'alta'),
     tabFecBajaColumn:        find('fecha_baja', 'fec_baja', 'f_baja', 'baja'),
     tabFecPagoColumn:        find('fec_pago', 'fecha_pago', 'pago'),
+    // NR — campos fijos
+    tabIdCentroTrabColumn:    find('id_centro_trab', 'centro_trab'),
+    tabIdCategoriaColumn:     find('id_categoria', 'categoria'),
+    // NR — Otros NR (exact para evitar match con substrings de Indemnizatorios)
+    tabReinHomeOficeColumn:   findExact('rein_home_ofice', 'rein home ofice'),
+    tabGratExtraordColumn:    findExact('grat_extraord', 'grat extraord'),
+    tabAsigPasColumn:         findExact('asig_pas', 'asig pas'),
+    tabReintGuardColumn:      findExact('reint_guard', 'reint guard'),
+    tabIncrementoStColumn:    findExact('incremento_st', 'incremento st'),
+    // NR — Indemnizatorios (exact para evitar falsos positivos entre conceptos similares)
+    tabIndemPreavisoColumn:   findExact('indem_preaviso', 'indem preaviso'),
+    tabSacPreavisoColumn:     findExact('sac_preaviso', 'sac preaviso'),
+    tabIndemAntDespColumn:    findExact('indem_ant_desp', 'indem ant desp'),
+    tabIndemAntFalleColumn:   findExact('indem_ant_falle', 'indem ant falle'),
+    tabIndemIntegColumn:      findExact('indem_integ'),
+    tabSacIndemIntegColumn:   findExact('sac_indem_integ', 'sac indem integ'),
+    tabIndmMaternidadColumn:  findExact('indm_maternidad', 'indem_maternidad', 'maternidad'),
+    tabVacNoGozadasColumn:    findExact('vac_no_gozadas', 'vac no gozadas'),
+    tabVacNoGozSacColumn:     findExact('vac_no_goz_sac', 'vac no goz sac'),
+    tabGratVacColumn:         findExact('grat_vac', 'grat vac'),
+    tabGraVacnogSacColumn:    findExact('gra_vacnog_sac', 'gra vacnog sac'),
+    tabIndemFuerMayColumn:    findExact('indem_fuer_may', 'indem fuer may'),
+    tabIndemEmbarazoColumn:   findExact('indem_embarazo', 'indem embarazo'),
   };
 }
 
-function renderTabExtraConfig(container, state, root, { hasBrutos, hasGsPers }) {
+function renderTabExtraConfig(container, state, root, { hasBrutos, hasGsPers, hasNr }) {
   const tabHeaders = state.tab?.parsedRows?.length > 0
     ? Object.keys(state.tab.parsedRows[0])
     : [];
 
-  // Auto-detectar solo si el config está vacío
-  if (tabHeaders.length > 0 && !Object.values(state.tabExtraConfig).some(Boolean)) {
-    Object.assign(state.tabExtraConfig, autoDetectTabExtraConfig(tabHeaders));
+  // Merge incremental: auto-detectar campos que aún no están configurados
+  if (tabHeaders.length > 0) {
+    const detected = autoDetectTabExtraConfig(tabHeaders);
+    let anyNew = false;
+    for (const [k, v] of Object.entries(detected)) {
+      if (v && !state.tabExtraConfig[k]) {
+        state.tabExtraConfig[k] = v;
+        anyNew = true;
+      }
+    }
+    if (anyNew) state.tabExtraConfigAutoDetected = true;
   }
 
+  const hasSavedConfig = Object.values(state.tabExtraConfig).some(Boolean);
+  const autoDetected   = state.tabExtraConfigAutoDetected;
+
   // Construir lista de campos a mostrar según los controles seleccionados.
-  // Los campos específicos de cada control van primero (obligatorios), después los compartidos.
+  // { groupHeader: string } intercalado actúa como separador visual en el grid.
   const fields = [
     ...(hasBrutos ? TAB_BRUTOS_FIELDS  : []),
     ...(hasGsPers ? TAB_GS_PERS_FIELDS : []),
+    ...(hasNr ? [
+      ...TAB_NR_EXTRA_FIELDS,
+      { groupHeader: 'Indemnizatorios' },
+      ...TAB_NR_INDEM_FIELDS,
+      { groupHeader: 'Otros NR' },
+      ...TAB_NR_OTROS_FIELDS,
+    ] : []),
     ...TAB_SHARED_FIELDS,
   ];
 
-  const headerTitle = (hasBrutos && hasGsPers) ? 'Brutos y GS Pers'
-    : hasBrutos ? 'Brutos'
-    : 'GS Pers';
+  const parts = [
+    hasBrutos && 'Brutos',
+    hasGsPers && 'GS Pers',
+    hasNr     && 'Control NR',
+  ].filter(Boolean);
+  const headerTitle = parts.join(' / ');
 
   const opts = (selected = '') =>
     ['', ...tabHeaders]
@@ -524,15 +616,23 @@ function renderTabExtraConfig(container, state, root, { hasBrutos, hasGsPers }) 
     </p>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:var(--sp-3);">
       ${fields.map(f => {
-        const val  = state.tabExtraConfig[f.key] || '';
-        const warn = f.required && !val;
+        if (f.groupHeader) {
+          return `
+            <div style="grid-column:1/-1;margin-top:var(--sp-2);padding-bottom:var(--sp-1);border-bottom:1px solid var(--color-border);">
+              <span style="font-size:var(--text-sm);font-weight:var(--fw-semibold);color:var(--color-wordmark);">${esc(f.groupHeader)}</span>
+            </div>
+          `;
+        }
+        const val   = state.tabExtraConfig[f.key] || '';
+        const level = matchLevel(val, { autoDetected, hasSavedMapping: hasSavedConfig });
+        const style = matchSelectStyle(level);
+        const badge = matchBadge(level);
         return `
           <div class="form-group" style="margin-bottom:0;">
             <label class="form-label ${f.required ? 'form-label--required' : ''}">
-              ${esc(f.label)}
-              ${warn ? '<span style="color:#B45309;font-size:.8em;"> ⚠ requerida</span>' : ''}
+              ${esc(f.label)}${badge}
             </label>
-            <select class="form-select" data-tab-extra-key="${esc(f.key)}"${warn ? ' style="border-color:#EAB308;"' : ''}>
+            <select class="form-select" data-tab-extra-key="${esc(f.key)}"${style ? ` style="${style}"` : ''}>
               ${opts(val)}
             </select>
           </div>
