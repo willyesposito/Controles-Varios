@@ -23,6 +23,14 @@
   --color-warning-bg:  #FFF8E1;
   --color-info-bg:     #E1F5FE;
 
+  /* Match de columnas (mapeo de archivos)
+     exact  = auto-detectado con nombre idéntico   → verde medio
+     saved  = viene de sesión anterior             → verde suave  */
+  --color-match-exact:        #2E7D32;
+  --color-match-exact-bg:     rgba(46, 125, 50, 0.09);
+  --color-match-saved:        #66BB6A;
+  --color-match-saved-bg:     rgba(102, 187, 106, 0.07);
+
   /* ── Tipografía ──────────────────────────────────────────── */
   --font:              "Source Sans Pro", Arial, Helvetica, sans-serif;
   --fw-light:          300;
@@ -97,6 +105,11 @@
     --color-warning-bg:  #2C1A00;
     --color-info-bg:     #003847;
 
+    --color-match-exact:        #81C784;
+    --color-match-exact-bg:     rgba(129, 199, 132, 0.12);
+    --color-match-saved:        #A5D6A7;
+    --color-match-saved-bg:     rgba(165, 214, 167, 0.08);
+
     --shadow-sm:  0 1px 3px rgba(0, 0, 0, 0.35);
     --shadow-md:  0 4px 12px rgba(0, 0, 0, 0.45);
     --shadow-lg:  0 8px 24px rgba(0, 0, 0, 0.55);
@@ -122,6 +135,11 @@
   --color-warning-bg:  #2C1A00;
   --color-info-bg:     #003847;
 
+  --color-match-exact:        #81C784;
+  --color-match-exact-bg:     rgba(129, 199, 132, 0.12);
+  --color-match-saved:        #A5D6A7;
+  --color-match-saved-bg:     rgba(165, 214, 167, 0.08);
+
   --shadow-sm:  0 1px 3px rgba(0, 0, 0, 0.35);
   --shadow-md:  0 4px 12px rgba(0, 0, 0, 0.45);
   --shadow-lg:  0 8px 24px rgba(0, 0, 0, 0.55);
@@ -142,6 +160,11 @@
   --color-warning:     #F57C00;
   --color-warning-bg:  #FFF8E1;
   --color-info-bg:     #E1F5FE;
+
+  --color-match-exact:        #2E7D32;
+  --color-match-exact-bg:     rgba(46, 125, 50, 0.09);
+  --color-match-saved:        #66BB6A;
+  --color-match-saved-bg:     rgba(102, 187, 106, 0.07);
 
   --shadow-sm:  0 1px 3px rgba(0, 0, 0, 0.08);
   --shadow-md:  0 4px 12px rgba(0, 0, 0, 0.10);
