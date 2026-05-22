@@ -8,6 +8,7 @@ import { parseTabuladoControl } from '../parsers/tabuladoControl.js';
 import { parseCatEmpleados } from '../parsers/catEmpleados.js';
 import { parseBrutos } from '../parsers/brutosParser.js';
 import { parseGsPers } from '../parsers/gsPersParser.js';
+import { parseNr }     from '../parsers/nrParser.js';
 import { getFileProfile, saveFileProfile } from '../db.js';
 
 // Campos "estándar" por tipo de archivo.
@@ -58,6 +59,27 @@ const FIELD_DEFS = {
     { key: 'legajoColumn',          label: 'Columna de Legajo',                  required: true  },
     { key: 'gtosPersonalesColumn',  label: 'Columna de GTOS_PERSONALES',         required: false },
     { key: 'dtoCocheraColumn',      label: 'Columna de DTO_COCHERA',             required: false },
+  ],
+  nr_file: [
+    { key: 'legajoColumn',          label: 'Columna de Legajo',                  required: true  },
+    { key: 'reinHomeOficeColumn',   label: 'Columna de REIN_HOME_OFICE',         required: false },
+    { key: 'indemPreavisoColumn',   label: 'Columna de INDEM_PREAVISO',          required: false },
+    { key: 'sacPreavisoColumn',     label: 'Columna de SAC_PREAVISO',            required: false },
+    { key: 'indemAntDespColumn',    label: 'Columna de INDEM_ANT_DESP',          required: false },
+    { key: 'indemAntFalleColumn',   label: 'Columna de INDEM_ANT_FALLE',         required: false },
+    { key: 'indemIntegColumn',      label: 'Columna de INDEM_INTEG',             required: false },
+    { key: 'sacIndemIntegColumn',   label: 'Columna de SAC_INDEM_INTEG',         required: false },
+    { key: 'indmMaternidadColumn',  label: 'Columna de INDM_MATERNIDAD',         required: false },
+    { key: 'vacNoGozadasColumn',    label: 'Columna de VAC_NO_GOZADAS',          required: false },
+    { key: 'vacNoGozSacColumn',     label: 'Columna de VAC_NO_GOZ_SAC',          required: false },
+    { key: 'gratVacColumn',         label: 'Columna de GRAT_VAC',                required: false },
+    { key: 'graVacnogSacColumn',    label: 'Columna de GRA_VACNOG_SAC',          required: false },
+    { key: 'indemFuerMayColumn',    label: 'Columna de INDEM_FUER_MAY',          required: false },
+    { key: 'indemEmbarazoColumn',   label: 'Columna de INDEM_EMBARAZO',          required: false },
+    { key: 'gratExtraordColumn',    label: 'Columna de GRAT_EXTRAORD',           required: false },
+    { key: 'asigPasColumn',         label: 'Columna de ASIG_PAS',               required: false },
+    { key: 'reintGuardColumn',      label: 'Columna de REINT_GUARD',             required: false },
+    { key: 'incrementoStColumn',    label: 'Columna de INCREMENTO_ST',           required: false },
   ],
 };
 
@@ -267,7 +289,7 @@ function renderAlreadyLoaded(container, existingData, onReplace, onComplete) {
     const fil = parseMetadata?.filtradas ?? 0;
     metaLine = `${parseMetadata?.activos ?? 0} activos de ${parseMetadata?.total ?? 0} filas`
       + (fil > 0 ? ` &nbsp;·&nbsp; <span class="badge badge--warning">${fil} sumatorias excluidas</span>` : '');
-  } else if (fileType === 'tab_control' || fileType === 'brutos_file' || fileType === 'gs_pers_file') {
+  } else if (fileType === 'tab_control' || fileType === 'brutos_file' || fileType === 'gs_pers_file' || fileType === 'nr_file') {
     metaLine = `${parseMetadata?.totalRows ?? 0} registros`;
   } else {
     metaLine = `${parseMetadata?.uniqueLegajos ?? 0} legajos · ${parseMetadata?.detectedConcepts?.length ?? 0} conceptos`;
@@ -508,6 +530,7 @@ function parseFile(arrayBuffer, fileType, mapping) {
     case 'cat_empleados':               return parseCatEmpleados(arrayBuffer, mapping);
     case 'brutos_file':                 return parseBrutos(arrayBuffer, mapping);
     case 'gs_pers_file':                return parseGsPers(arrayBuffer, mapping);
+    case 'nr_file':                     return parseNr(arrayBuffer, mapping);
     default: throw new Error(`Tipo de archivo desconocido: "${fileType}".`);
   }
 }
@@ -521,6 +544,7 @@ function fileTypeLabel(fileType) {
     cat_empleados:               'Catálogo de Empleados',
     brutos_file:                 'Reporte de Brutos',
     gs_pers_file:                'Reporte de GS Pers (Gastos Personales y Cochera)',
+    nr_file:                     'Reporte de NR (No Remunerativos)',
   }[fileType] || fileType;
 }
 

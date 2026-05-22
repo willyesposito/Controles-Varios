@@ -40,6 +40,15 @@ import {
   summarizeGsPersReporte,
 } from './gsPers.js';
 
+import {
+  runNr,
+  renderNrResults,
+  summarizeNr,
+  runNrReporte,
+  renderNrReporteResults,
+  summarizeNrReporte,
+} from './nr.js';
+
 export const CONTROL_REGISTRY = {
 
   cat_x_empleados: {
@@ -159,6 +168,55 @@ export const CONTROL_REGISTRY = {
     run:           runGsPersReporte,
     summarize:     summarizeGsPersReporte,
     renderResults: renderGsPersReporteResults,
+  },
+
+  nr: {
+    id:          'nr',
+    label:       'Control NR — Controlar',
+    description: 'Cruza los 18 conceptos No Remunerativos del Reporte de M4 contra '
+      + 'las columnas configuradas en el Tabulado (Indemnizatorios y Otros NR).',
+    help: {
+      what: 'Controla que todos los 18 conceptos no remunerativos queden cargados '
+        + 'correctamente en el Tabulado, comparando el Reporte de M4 contra los valores '
+        + 'del Tabulado. Agrupa los conceptos en Indemnizatorios y Otros NR.',
+      how: [
+        'Bajá el Reporte de NR de M4.',
+        'Cargalo en el Paso 2 cuando te lo pida.',
+        'En el panel de configuración indicá las columnas del Tabulado para cada uno de los 18 conceptos.',
+        'Ejecutá. Las diferencias se muestran en rojo.',
+      ],
+    },
+    group:       { id: 'nr', label: 'Control NR', mode: 'Controlar' },
+    tabRequired: true,
+    additionalFiles: [
+      { key: 'nr', label: 'Reporte de NR', fileType: 'nr_file' },
+    ],
+    run:           runNr,
+    summarize:     summarizeNr,
+    renderResults: renderNrResults,
+  },
+
+  nr_reporte: {
+    id:          'nr_reporte',
+    label:       'Control NR — Generar Reporte',
+    description: 'Genera el Reporte de No Remunerativos directamente desde el Tabulado, '
+      + 'sin necesitar el archivo de M4.',
+    help: {
+      what: 'Genera el archivo de NR directamente desde el Tabulado con los 18 conceptos '
+        + 'no remunerativos. Todos los conceptos son obligatorios y deben estar mapeados '
+        + 'para asegurar que queden todos incluidos en el reporte.',
+      how: [
+        'En el panel de configuración del Paso 2 indicá las columnas del Tabulado para cada uno de los 18 conceptos.',
+        'Ejecutá.',
+        'Descargá el .xlsx generado desde el resultado.',
+      ],
+    },
+    group:       { id: 'nr', label: 'Control NR', mode: 'Generar Reporte' },
+    tabRequired: true,
+    additionalFiles: [],
+    run:           runNrReporte,
+    summarize:     summarizeNrReporte,
+    renderResults: renderNrReporteResults,
   },
 
 };
