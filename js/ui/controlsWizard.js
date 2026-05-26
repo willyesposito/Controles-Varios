@@ -244,6 +244,7 @@ function renderStepTab(container, state, root) {
             <div style="
               position:absolute;z-index:10;margin-top:var(--sp-2);right:0;
               max-width:560px;width:90vw;
+              max-height:70vh;overflow-y:auto;
               padding:var(--sp-5);background:var(--color-bg);
               border:1px solid var(--color-border);border-radius:var(--radius-md);
               box-shadow:0 4px 16px rgba(0,0,0,0.12);font-size:var(--text-sm);
