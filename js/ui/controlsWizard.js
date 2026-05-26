@@ -228,10 +228,67 @@ function renderStepTab(container, state, root) {
         <span>▸</span> Catálogo de Conceptos (opcional)
       </summary>
       <div style="margin-top:var(--sp-3);padding:var(--sp-4);background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);">
-        <p class="text-sm text-muted" style="margin-bottom:var(--sp-3);">
-          El catálogo define qué columnas del Tabulado corresponden a cada concepto y a qué controles
-          pertenecen. Si no cargás uno, se usa el catálogo estándar.
-        </p>
+
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:var(--sp-3);margin-bottom:var(--sp-3);position:relative;">
+          <p class="text-sm text-muted" style="margin:0;">
+            El catálogo define qué columnas del Tabulado corresponden a cada concepto y a qué controles
+            pertenecen. Si no cargás uno, se usa el catálogo estándar.
+          </p>
+          <details style="flex-shrink:0;">
+            <summary style="
+              list-style:none;cursor:pointer;font-size:1.15em;
+              width:1.6em;height:1.6em;display:flex;align-items:center;justify-content:center;
+              border-radius:50%;border:1px solid var(--color-border);background:var(--color-bg);
+              color:var(--color-primary);user-select:none;
+            " title="¿Qué es el catálogo? ¿Para qué sirve?">ℹ</summary>
+            <div style="
+              position:absolute;z-index:10;margin-top:var(--sp-2);right:0;
+              max-width:560px;width:90vw;
+              padding:var(--sp-5);background:var(--color-bg);
+              border:1px solid var(--color-border);border-radius:var(--radius-md);
+              box-shadow:0 4px 16px rgba(0,0,0,0.12);font-size:var(--text-sm);
+            ">
+              <p style="margin:0 0 var(--sp-4);font-weight:var(--fw-semibold);">¿Qué es el Catálogo de Conceptos?</p>
+
+              <p style="margin:0 0 var(--sp-3);">
+                Es el mapa que conecta los <strong>nombres de columnas</strong> de los archivos del cliente
+                con los <strong>conceptos contables</strong> que la app conoce. Cargándolo una vez,
+                el auto-detect mejora notablemente y el análisis del Tabulado pasa a ser visible y accionable.
+              </p>
+
+              <p style="margin:0 0 var(--sp-2);font-weight:var(--fw-semibold);">Estructura del archivo (.xlsx)</p>
+              <table style="width:100%;border-collapse:collapse;margin-bottom:var(--sp-4);">
+                <thead>
+                  <tr style="background:var(--color-surface);">
+                    <th style="padding:4px 8px;text-align:left;border:1px solid var(--color-border);">Columna</th>
+                    <th style="padding:4px 8px;text-align:left;border:1px solid var(--color-border);">Requerida</th>
+                    <th style="padding:4px 8px;text-align:left;border:1px solid var(--color-border);">Descripción</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td style="padding:4px 8px;border:1px solid var(--color-border);font-family:monospace;">CODIGO</td><td style="padding:4px 8px;border:1px solid var(--color-border);">Sí</td><td style="padding:4px 8px;border:1px solid var(--color-border);">Identificador canónico del concepto. Ej: <code>SAL_BASE</code>, <code>INDEM_PREAVISO</code></td></tr>
+                  <tr><td style="padding:4px 8px;border:1px solid var(--color-border);font-family:monospace;">DESCRIPCION</td><td style="padding:4px 8px;border:1px solid var(--color-border);">Sí</td><td style="padding:4px 8px;border:1px solid var(--color-border);">Nombre humano. Ej: "Sueldo Base", "Indemnización por Preaviso"</td></tr>
+                  <tr><td style="padding:4px 8px;border:1px solid var(--color-border);font-family:monospace;">CLASIFICACION</td><td style="padding:4px 8px;border:1px solid var(--color-border);">Sí</td><td style="padding:4px 8px;border:1px solid var(--color-border);">Uno de: <code>remu</code> · <code>no_remu</code> · <code>aporte</code> · <code>contribucion</code></td></tr>
+                  <tr><td style="padding:4px 8px;border:1px solid var(--color-border);font-family:monospace;">CONTROLES</td><td style="padding:4px 8px;border:1px solid var(--color-border);">No</td><td style="padding:4px 8px;border:1px solid var(--color-border);">IDs de controles que usan este concepto, separados por <code>|</code>. Ej: <code>brutos|nr</code></td></tr>
+                  <tr><td style="padding:4px 8px;border:1px solid var(--color-border);font-family:monospace;">ALIAS</td><td style="padding:4px 8px;border:1px solid var(--color-border);">No</td><td style="padding:4px 8px;border:1px solid var(--color-border);">Otros nombres con que aparece la columna en archivos del cliente, separados por <code>|</code>. Ej: <code>sueldo|1003-|sal base</code></td></tr>
+                </tbody>
+              </table>
+
+              <p style="margin:0 0 var(--sp-2);font-weight:var(--fw-semibold);">¿Qué se gana cargándolo?</p>
+              <ul style="margin:0 0 var(--sp-3);padding-left:var(--sp-5);line-height:1.6;">
+                <li><strong>Auto-detect mejorado:</strong> el sistema busca las columnas usando el código, todos sus alias, y también tolera variaciones de espacios, guiones y errores de tipeo de un carácter.</li>
+                <li><strong>Panel de análisis del Tabulado:</strong> después de cargar el Tabulado se muestra qué columnas fueron reconocidas, cuáles son "huérfanas" (no están en el catálogo) y cuáles se esperaban pero no aparecen en el archivo.</li>
+                <li><strong>Visibilidad de conceptos nuevos:</strong> si el cliente empieza a liquidar un concepto nuevo, aparecerá en "Huérfanas" y podés decidir si agregarlo al catálogo.</li>
+              </ul>
+
+              <p style="margin:0;color:var(--color-text-muted);">
+                El catálogo se guarda por cliente. No hace falta cargarlo en cada sesión.
+                Si no cargás uno, la app usa el catálogo estándar (22 conceptos conocidos).
+              </p>
+            </div>
+          </details>
+        </div>
+
         <div id="js-catalog-status" style="margin-bottom:var(--sp-3);">
           <div class="alert ${state.catalog ? 'alert--success' : 'alert--info'}" style="margin:0;">
             ${catSummary}
