@@ -37,6 +37,22 @@ db.version(2).stores({
   controlRunResults: '++id, controlRunId, controlId, [controlRunId+controlId]',
 });
 
+// v3 — agrega tabla de Catálogo de Conceptos por cliente
+db.version(3).stores({
+  clients:           '++id, name, createdAt',
+  groupers:          '++id, clientId, name',
+  grouperConcepts:   '++id, grouperId, conceptCode, [grouperId+conceptCode]',
+  fileProfiles:      '++id, clientId, fileType, [clientId+fileType]',
+  sessions:          '++id, clientId, period, isDefinitive, [clientId+period]',
+  sessionFiles:      '++id, sessionId, fileType',
+  sessionResults:    '++id, sessionId',
+  appConfig:         'key',
+  controlRuns:       '++id, clientId, period, isDefinitive, createdAt, [clientId+period]',
+  controlRunFiles:   '++id, controlRunId, fileType, [controlRunId+fileType]',
+  controlRunResults: '++id, controlRunId, controlId, [controlRunId+controlId]',
+  clientCatalogs:    'clientId',  // uno por cliente, clientId es la clave primaria
+});
+
 // ── CLIENTES ────────────────────────────────────────────────────────────
 
 export async function getClients() {
@@ -60,13 +76,14 @@ export async function deleteClient(id) {
   const cid = Number(id);
   // Borramos en cascada: primero los hijos, después el padre
   await db.transaction('rw',
-    [db.clients, db.groupers, db.grouperConcepts, db.fileProfiles,
+    [db.clients, db.groupers, db.grouperConcepts, db.fileProfiles, db.clientCatalogs,
      db.sessions, db.sessionFiles, db.sessionResults],
     async () => {
       const grouperIds = (await db.groupers.where('clientId').equals(cid).toArray()).map(g => g.id);
       if (grouperIds.length) await db.grouperConcepts.where('grouperId').anyOf(grouperIds).delete();
       await db.groupers.where('clientId').equals(cid).delete();
       await db.fileProfiles.where('clientId').equals(cid).delete();
+      await db.clientCatalogs.where('clientId').equals(cid).delete();
       const sessionIds = (await db.sessions.where('clientId').equals(cid).toArray()).map(s => s.id);
       if (sessionIds.length) {
         await db.sessionFiles.where('sessionId').anyOf(sessionIds).delete();
@@ -138,6 +155,32 @@ export async function saveFileProfile(clientId, fileType, mapping) {
     return db.fileProfiles.update(existing.id, { mapping, updatedAt: now });
   }
   return db.fileProfiles.add({ clientId: Number(clientId), fileType, mapping, createdAt: now, updatedAt: now });
+}
+
+// ── CATÁLOGO DE CONCEPTOS POR CLIENTE ───────────────────────────────────
+// Cada cliente puede tener su propio catálogo de conceptos (códigos, descripciones,
+// clasificaciones y alias). Si no lo cargó, los parsers caen al CATALOGO_SEED.
+
+export async function getClientCatalog(clientId) {
+  return db.clientCatalogs.get(Number(clientId));
+}
+
+export async function saveClientCatalog(clientId, data) {
+  const now = new Date().toISOString();
+  const existing = await getClientCatalog(clientId);
+  const record = {
+    clientId:   Number(clientId),
+    rows:       data.rows,
+    fileName:   data.fileName,
+    parseMetadata: data.parseMetadata,
+    createdAt:  existing?.createdAt || now,
+    updatedAt:  now,
+  };
+  return db.clientCatalogs.put(record);
+}
+
+export async function deleteClientCatalog(clientId) {
+  return db.clientCatalogs.delete(Number(clientId));
 }
 
 // ── SESIONES ─────────────────────────────────────────────────────────────

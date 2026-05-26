@@ -4,30 +4,29 @@
 // El resto de columnas se preservan en parsedRows para futuros usos.
 /* global XLSX */
 export { detectHeaders } from './nominaMaestra.js';
+import { buildParserMapping } from './conceptMatcher.js';
+import { CATALOGO_SEED } from '../data/catalogoSeed.js';
 
-const GS_PERS_STD_COLS = {
-  'LEGAJO':           'legajoColumn',
-  'ID_EMPLEADO':      'legajoColumn',
-  'GTOS_PERSONALES':  'gtosPersonalesColumn',
-  'DTO_COCHERA':      'dtoCocheraColumn',
-};
-
-const GS_PERS_REQUIRED_KEYS = ['legajoColumn'];
+const LEGAJO_ALIASES = ['LEGAJO', 'ID_EMPLEADO', 'LEGAJO_SAP'];
 
 /**
  * Auto-detección de columnas del Reporte de GS Pers.
- * Retorna el mapping si la columna de LEGAJO se encontró, null si no.
+ * @param {string[]} headers
+ * @param {Array}    [catalogRows] — catálogo activo; si no se pasa, usa CATALOGO_SEED
  */
-export function autoDetectGsPersMapping(headers) {
-  const mapping = {};
-  for (const [colName, key] of Object.entries(GS_PERS_STD_COLS)) {
-    if (mapping[key]) continue;
-    const idx = headers.findIndex(h =>
-      h === colName || h.toLowerCase() === colName.toLowerCase()
-    );
-    if (idx >= 0) mapping[key] = headers[idx];
-  }
-  return GS_PERS_REQUIRED_KEYS.every(k => mapping[k]) ? mapping : null;
+export function autoDetectGsPersMapping(headers, catalogRows) {
+  const catalog = catalogRows || CATALOGO_SEED;
+  const lc = h => String(h).toLowerCase();
+
+  const legajoHeader = headers.find(h => LEGAJO_ALIASES.some(a => lc(a) === lc(h)));
+  if (!legajoHeader) return null;
+
+  const conceptMapping = buildParserMapping(headers, catalog, {
+    'GTOS_PERSONALES': 'gtosPersonalesColumn',
+    'DTO_COCHERA':     'dtoCocheraColumn',
+  });
+
+  return { legajoColumn: legajoHeader, ...conceptMapping };
 }
 
 /**
