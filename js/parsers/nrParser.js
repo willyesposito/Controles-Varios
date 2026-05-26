@@ -3,10 +3,12 @@
 // Columnas clave: LEGAJO/ID_EMPLEADO + los 18 conceptos NR
 /* global XLSX */
 export { detectHeaders } from './nominaMaestra.js';
+import { buildParserMapping } from './conceptMatcher.js';
+import { CATALOGO_SEED } from '../data/catalogoSeed.js';
 
-const NR_STD_COLS = {
-  'LEGAJO':           'legajoColumn',
-  'ID_EMPLEADO':      'legajoColumn',
+const LEGAJO_ALIASES = ['LEGAJO', 'ID_EMPLEADO', 'LEGAJO_SAP'];
+
+const NR_CODIGO_TO_KEY = {
   'REIN_HOME_OFICE':  'reinHomeOficeColumn',
   'INDEM_PREAVISO':   'indemPreavisoColumn',
   'SAC_PREAVISO':     'sacPreavisoColumn',
@@ -27,22 +29,21 @@ const NR_STD_COLS = {
   'INCREMENTO_ST':    'incrementoStColumn',
 };
 
-const NR_REQUIRED_KEYS = ['legajoColumn'];
-
 /**
  * Auto-detección de columnas del Reporte de NR.
- * Retorna el mapping si la columna de LEGAJO se encontró, null si no.
+ * @param {string[]} headers
+ * @param {Array}    [catalogRows] — catálogo activo; si no se pasa, usa CATALOGO_SEED
  */
-export function autoDetectNrMapping(headers) {
-  const mapping = {};
-  for (const [colName, key] of Object.entries(NR_STD_COLS)) {
-    if (mapping[key]) continue;
-    const idx = headers.findIndex(h =>
-      h === colName || h.toLowerCase() === colName.toLowerCase()
-    );
-    if (idx >= 0) mapping[key] = headers[idx];
-  }
-  return NR_REQUIRED_KEYS.every(k => mapping[k]) ? mapping : null;
+export function autoDetectNrMapping(headers, catalogRows) {
+  const catalog = catalogRows || CATALOGO_SEED;
+  const lc = h => String(h).toLowerCase();
+
+  const legajoHeader = headers.find(h => LEGAJO_ALIASES.some(a => lc(a) === lc(h)));
+  if (!legajoHeader) return null;
+
+  const conceptMapping = buildParserMapping(headers, catalog, NR_CODIGO_TO_KEY);
+
+  return { legajoColumn: legajoHeader, ...conceptMapping };
 }
 
 /**

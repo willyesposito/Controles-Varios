@@ -13,14 +13,19 @@ import {
   saveControlRunResults,
   getFileProfile,
   saveFileProfile,
+  getClientCatalog,
+  saveClientCatalog,
 } from '../db.js';
+import { CATALOGO_SEED } from '../data/catalogoSeed.js';
 import { initFileUploadStep, matchLevel, matchSelectStyle, matchBadge } from './fileUpload.js';
+import { renderTabuladoAnalysis } from './tabuladoAnalysis.js';
 import { CONTROL_REGISTRY }        from '../controls/registry.js';
 import { autoDetectTabMapping }    from '../parsers/tabuladoControl.js';
 import { autoDetectCatMapping }    from '../parsers/catEmpleados.js';
 import { autoDetectBrutosMapping } from '../parsers/brutosParser.js';
 import { autoDetectGsPersMapping } from '../parsers/gsPersParser.js';
 import { autoDetectNrMapping }    from '../parsers/nrParser.js';
+import { buildParserMapping }      from '../parsers/conceptMatcher.js';
 import { currentPeriod, periodOptions } from '../utils/dates.js';
 
 // Mapa: fileType → función de auto-detección de columnas
@@ -50,13 +55,17 @@ export async function renderControlsWizard(root, clientId) {
     return;
   }
 
-  const savedBrutosConfig = await getFileProfile(Number(clientId), 'brutos_tab_config');
+  const [savedBrutosConfig, savedCatalog] = await Promise.all([
+    getFileProfile(Number(clientId), 'brutos_tab_config'),
+    getClientCatalog(Number(clientId)),
+  ]);
 
   const state = {
     step:             0,
     clientId:         Number(clientId),
     client,
     tab:              null,
+    catalog:          savedCatalog || null,  // { rows, fileName, parseMetadata } | null
     selectedControls: ['cat_x_empleados'],
     controlFiles:     { cat_x_empleados: {} },
     period:           currentPeriod(),
@@ -198,14 +207,85 @@ function canGoNext(state) {
 // ── Paso 0: Cargar Tabulado ───────────────────────────────────────────────────
 
 function renderStepTab(container, state, root) {
+  const catMeta = state.catalog?.parseMetadata;
+  const catSummary = state.catalog
+    ? `✅ <strong>${esc(state.catalog.fileName)}</strong> — ${catMeta?.totalRows ?? 0} conceptos cargados`
+    : `📂 Sin catálogo cargado — se usará el catálogo estándar (${CATALOGO_SEED.length} conceptos).`;
+
   container.innerHTML = `
     <h3 style="margin-bottom:var(--sp-2);">Paso 1 — Tabulado estandarizado</h3>
     <p class="text-muted" style="margin-bottom:var(--sp-5);">
       Este archivo es la base para todos los controles. Se carga una vez por sesión
       y se comparte entre todos los controles seleccionados.
     </p>
+
+    <details style="margin-bottom:var(--sp-5);" ${state.catalog ? '' : 'open'}>
+      <summary style="
+        cursor:pointer;font-size:var(--text-sm);font-weight:var(--fw-semibold);
+        color:var(--color-primary);list-style:none;display:flex;align-items:center;
+        gap:var(--sp-2);user-select:none;margin-bottom:var(--sp-1);
+      ">
+        <span>▸</span> Catálogo de Conceptos (opcional)
+      </summary>
+      <div style="margin-top:var(--sp-3);padding:var(--sp-4);background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);">
+        <p class="text-sm text-muted" style="margin-bottom:var(--sp-3);">
+          El catálogo define qué columnas del Tabulado corresponden a cada concepto y a qué controles
+          pertenecen. Si no cargás uno, se usa el catálogo estándar.
+        </p>
+        <div id="js-catalog-status" style="margin-bottom:var(--sp-3);">
+          <div class="alert ${state.catalog ? 'alert--success' : 'alert--info'}" style="margin:0;">
+            ${catSummary}
+          </div>
+        </div>
+        <div id="js-catalog-upload" style="${state.catalog ? 'display:none' : ''}"></div>
+        ${state.catalog ? `<button class="btn btn--ghost btn--sm" id="js-catalog-replace">↺ Reemplazar catálogo</button>` : ''}
+      </div>
+    </details>
+
     <div id="js-tab-upload"></div>
+    <div id="js-tab-analysis"></div>
   `;
+
+  // Inicializar el upload del catálogo
+  const catalogUploadEl = container.querySelector('#js-catalog-upload');
+  initFileUploadStep(catalogUploadEl, {
+    clientId:    state.clientId,
+    fileType:    'concept_catalog',
+    existingData: null,
+    onComplete:  async (data) => {
+      state.catalog = { rows: data.rows, fileName: data.fileName, parseMetadata: data.parseMetadata };
+      await saveClientCatalog(state.clientId, state.catalog);
+      // Re-render el paso completo para reflejar el catálogo cargado
+      renderStepTab(container, state, root);
+    },
+  });
+
+  // Botón reemplazar
+  container.querySelector('#js-catalog-replace')?.addEventListener('click', () => {
+    const statusEl = container.querySelector('#js-catalog-status');
+    const uploadEl = container.querySelector('#js-catalog-upload');
+    statusEl.innerHTML = '<div class="alert alert--info" style="margin:0;">Cargá el nuevo catálogo:</div>';
+    uploadEl.style.display = '';
+    container.querySelector('#js-catalog-replace')?.remove();
+    initFileUploadStep(uploadEl, {
+      clientId:    state.clientId,
+      fileType:    'concept_catalog',
+      existingData: null,
+      onComplete:  async (data) => {
+        state.catalog = { rows: data.rows, fileName: data.fileName, parseMetadata: data.parseMetadata };
+        await saveClientCatalog(state.clientId, state.catalog);
+        renderStepTab(container, state, root);
+      },
+    });
+  });
+
+  const catalogRows = state.catalog?.rows || CATALOGO_SEED;
+  const analysisEl  = container.querySelector('#js-tab-analysis');
+
+  // Si el tabulado ya está cargado (ej: re-render tras cambio de catálogo), mostrar análisis de inmediato
+  if (state.tab) {
+    renderTabuladoAnalysis(analysisEl, state.tab, catalogRows, state.selectedControls);
+  }
 
   initFileUploadStep(container.querySelector('#js-tab-upload'), {
     clientId:    state.clientId,
@@ -215,6 +295,7 @@ function renderStepTab(container, state, root) {
     onComplete:  (data) => {
       state.tab = data;
       renderWizardNav(root, state);
+      renderTabuladoAnalysis(analysisEl, state.tab, catalogRows, state.selectedControls);
     },
   });
 }
@@ -438,11 +519,17 @@ function renderStepControls(container, state, root) {
       wrapper.appendChild(uploadDiv);
       filesArea.appendChild(wrapper);
 
+      const baseDetect = AUTO_DETECT[fileSpec.fileType];
+      const catalogRows = state.catalog?.rows || CATALOGO_SEED;
+      const autoDetect = baseDetect
+        ? (headers) => baseDetect(headers, catalogRows)
+        : null;
+
       initFileUploadStep(uploadDiv, {
         clientId:    state.clientId,
         fileType:    fileSpec.fileType,
         existingData: state.controlFiles[controlId]?.[fileSpec.key] || null,
-        autoDetect:  AUTO_DETECT[fileSpec.fileType] || null,
+        autoDetect,
         onComplete:  (data) => {
           if (!state.controlFiles[controlId]) state.controlFiles[controlId] = {};
           state.controlFiles[controlId][fileSpec.key] = data;
@@ -511,50 +598,58 @@ const TAB_NR_OTROS_FIELDS = [
   { key: 'tabIncrementoStColumn',   label: 'INCREMENTO_ST — columna en Tabulado',   required: true },
 ];
 
-function autoDetectTabExtraConfig(tabHeaders) {
-  const lc      = h => String(h).toLowerCase();
-  const find    = (...kws) => tabHeaders.find(h => kws.some(kw => lc(h).includes(lc(kw)))) || '';
-  const findExact = (...kws) => tabHeaders.find(h => kws.some(kw => lc(h) === lc(kw))) || '';
+// Mapa CODIGO del catálogo → clave del tabExtraConfig (con prefijo "tab")
+const TAB_EXTRA_CODIGO_TO_KEY = {
+  'SAL_BASE':        'tabSalBaseColumn',
+  'A_CTA_FUT_AUMEN': 'tabACuFutAumenColumn',
+  'GTOS_PERSONALES': 'tabGtosPersonalesColumn',
+  'DTO_COCHERA':     'tabDtoCocheraColumn',
+  'INDEM_PREAVISO':  'tabIndemPreavisoColumn',
+  'SAC_PREAVISO':    'tabSacPreavisoColumn',
+  'INDEM_ANT_DESP':  'tabIndemAntDespColumn',
+  'INDEM_ANT_FALLE': 'tabIndemAntFalleColumn',
+  'INDEM_INTEG':     'tabIndemIntegColumn',
+  'SAC_INDEM_INTEG': 'tabSacIndemIntegColumn',
+  'INDM_MATERNIDAD': 'tabIndmMaternidadColumn',
+  'VAC_NO_GOZADAS':  'tabVacNoGozadasColumn',
+  'VAC_NO_GOZ_SAC':  'tabVacNoGozSacColumn',
+  'GRAT_VAC':        'tabGratVacColumn',
+  'GRA_VACNOG_SAC':  'tabGraVacnogSacColumn',
+  'INDEM_FUER_MAY':  'tabIndemFuerMayColumn',
+  'INDEM_EMBARAZO':  'tabIndemEmbarazoColumn',
+  'REIN_HOME_OFICE': 'tabReinHomeOficeColumn',
+  'GRAT_EXTRAORD':   'tabGratExtraordColumn',
+  'ASIG_PAS':        'tabAsigPasColumn',
+  'REINT_GUARD':     'tabReintGuardColumn',
+  'INCREMENTO_ST':   'tabIncrementoStColumn',
+};
 
+function autoDetectTabExtraConfig(tabHeaders, catalogRows) {
+  const catalog = catalogRows || CATALOGO_SEED;
+  const lc = h => String(h).toLowerCase();
+  const find = (...kws) => tabHeaders.find(h => kws.some(kw => lc(h).includes(lc(kw)))) || '';
+
+  // Campos de empleado (no están en el catálogo) — detección hardcoded
   const nombre   = find('nombre');
   const apellido = find('apellido');
 
+  // Campos NR fijos (ID_CENTRO_TRAB, ID_CATEGORIA) — también son campos de nómina, no conceptos
+  const idCentroTrab = find('id_centro_trab', 'centro_trab');
+  const idCategoria  = find('id_categoria', 'categoria');
+
+  // Conceptos del catálogo → usar buildParserMapping con normalización + alias + fuzzy
+  const conceptMapping = buildParserMapping(tabHeaders, catalog, TAB_EXTRA_CODIGO_TO_KEY);
+
   return {
-    // Brutos
-    tabSalBaseColumn:        find('sueldo', '1003-'),
-    tabACuFutAumenColumn:    find('a_cta_fut', 'acta_fut', '1017-', 'a cta fut'),
-    // GS Pers
-    tabGtosPersonalesColumn: find('gtos_personales', 'gastos_personales', 'gtos pers', 'gastos pers'),
-    tabDtoCocheraColumn:     find('dto_cochera', 'dto cochera', 'cochera'),
-    // Compartidos
-    tabNombreColumn:         (nombre && nombre !== apellido) ? nombre : '',
-    tabApellido1Column:      (apellido && apellido !== nombre) ? apellido : '',
-    tabFecAltaColumn:        find('fecha_alta', 'fec_alta', 'f_alta', 'alta'),
-    tabFecBajaColumn:        find('fecha_baja', 'fec_baja', 'f_baja', 'baja'),
-    tabFecPagoColumn:        find('fec_pago', 'fecha_pago', 'pago'),
-    // NR — campos fijos
-    tabIdCentroTrabColumn:    find('id_centro_trab', 'centro_trab'),
-    tabIdCategoriaColumn:     find('id_categoria', 'categoria'),
-    // NR — Otros NR (exact para evitar match con substrings de Indemnizatorios)
-    tabReinHomeOficeColumn:   findExact('rein_home_ofice', 'rein home ofice'),
-    tabGratExtraordColumn:    findExact('grat_extraord', 'grat extraord'),
-    tabAsigPasColumn:         findExact('asig_pas', 'asig pas'),
-    tabReintGuardColumn:      findExact('reint_guard', 'reint guard'),
-    tabIncrementoStColumn:    findExact('incremento_st', 'incremento st'),
-    // NR — Indemnizatorios (exact para evitar falsos positivos entre conceptos similares)
-    tabIndemPreavisoColumn:   findExact('indem_preaviso', 'indem preaviso'),
-    tabSacPreavisoColumn:     findExact('sac_preaviso', 'sac preaviso'),
-    tabIndemAntDespColumn:    findExact('indem_ant_desp', 'indem ant desp'),
-    tabIndemAntFalleColumn:   findExact('indem_ant_falle', 'indem ant falle'),
-    tabIndemIntegColumn:      findExact('indem_integ'),
-    tabSacIndemIntegColumn:   findExact('sac_indem_integ', 'sac indem integ'),
-    tabIndmMaternidadColumn:  findExact('indm_maternidad', 'indem_maternidad', 'maternidad'),
-    tabVacNoGozadasColumn:    findExact('vac_no_gozadas', 'vac no gozadas'),
-    tabVacNoGozSacColumn:     findExact('vac_no_goz_sac', 'vac no goz sac'),
-    tabGratVacColumn:         findExact('grat_vac', 'grat vac'),
-    tabGraVacnogSacColumn:    findExact('gra_vacnog_sac', 'gra vacnog sac'),
-    tabIndemFuerMayColumn:    findExact('indem_fuer_may', 'indem fuer may'),
-    tabIndemEmbarazoColumn:   findExact('indem_embarazo', 'indem embarazo'),
+    ...conceptMapping,
+    // Campos de empleado (hardcoded, no conceptos)
+    tabNombreColumn:      (nombre && nombre !== apellido) ? nombre : '',
+    tabApellido1Column:   (apellido && apellido !== nombre) ? apellido : '',
+    tabFecAltaColumn:     find('fecha_alta', 'fec_alta', 'f_alta', 'alta'),
+    tabFecBajaColumn:     find('fecha_baja', 'fec_baja', 'f_baja', 'baja'),
+    tabFecPagoColumn:     find('fec_pago', 'fecha_pago', 'pago'),
+    tabIdCentroTrabColumn: idCentroTrab,
+    tabIdCategoriaColumn:  idCategoria,
   };
 }
 
@@ -563,9 +658,11 @@ function renderTabExtraConfig(container, state, root, { hasBrutos, hasGsPers, ha
     ? Object.keys(state.tab.parsedRows[0])
     : [];
 
+  const catalogRows = state.catalog?.rows || CATALOGO_SEED;
+
   // Merge incremental: auto-detectar campos que aún no están configurados
   if (tabHeaders.length > 0) {
-    const detected = autoDetectTabExtraConfig(tabHeaders);
+    const detected = autoDetectTabExtraConfig(tabHeaders, catalogRows);
     let anyNew = false;
     for (const [k, v] of Object.entries(detected)) {
       if (v && !state.tabExtraConfig[k]) {

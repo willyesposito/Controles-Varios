@@ -9,6 +9,7 @@ import { parseCatEmpleados } from '../parsers/catEmpleados.js';
 import { parseBrutos } from '../parsers/brutosParser.js';
 import { parseGsPers } from '../parsers/gsPersParser.js';
 import { parseNr }     from '../parsers/nrParser.js';
+import { parseConceptCatalog } from '../parsers/conceptCatalog.js';
 import { getFileProfile, saveFileProfile } from '../db.js';
 
 // Campos "estándar" por tipo de archivo.
@@ -81,6 +82,8 @@ const FIELD_DEFS = {
     { key: 'reintGuardColumn',      label: 'Columna de REINT_GUARD',             required: false },
     { key: 'incrementoStColumn',    label: 'Columna de INCREMENTO_ST',           required: false },
   ],
+  // Catálogo de conceptos: formato fijo, no requiere mapping de columnas
+  concept_catalog: [],
 };
 
 // Tipos que soportan mapeo de nombre (horizontal: una fila por empleado)
@@ -127,6 +130,26 @@ export async function initFileUploadStep(container, { clientId, fileType, existi
     } catch (err) {
       renderError(container, `No se pudo leer el Excel: ${err.message}`,
         () => initFileUploadStep(container, { clientId, fileType, existingData, onComplete, autoDetect }));
+      return;
+    }
+
+    // Catálogo de conceptos: formato fijo → no necesita mapping, parsear directo
+    if (fileType === 'concept_catalog') {
+      renderLoadingProgress(container, 'parsing');
+      try {
+        const result = parseFile(arrayBuffer, fileType, null);
+        const data = { ...result, mapping: {}, fileName: file.name, fileType };
+        renderAlreadyLoaded(
+          container,
+          data,
+          () => initFileUploadStep(container, { clientId, fileType, existingData: null, onComplete }),
+          onComplete
+        );
+        onComplete(data);
+      } catch (err) {
+        renderError(container, `Error al procesar el catálogo: ${err.message}`,
+          () => initFileUploadStep(container, { clientId, fileType, existingData: null, onComplete }));
+      }
       return;
     }
 
@@ -289,6 +312,12 @@ function renderAlreadyLoaded(container, existingData, onReplace, onComplete) {
     const fil = parseMetadata?.filtradas ?? 0;
     metaLine = `${parseMetadata?.activos ?? 0} activos de ${parseMetadata?.total ?? 0} filas`
       + (fil > 0 ? ` &nbsp;·&nbsp; <span class="badge badge--warning">${fil} sumatorias excluidas</span>` : '');
+  } else if (fileType === 'concept_catalog') {
+    metaLine = `${parseMetadata?.totalRows ?? 0} conceptos`
+      + (parseMetadata?.remu         ? ` · ${parseMetadata.remu} remu`               : '')
+      + (parseMetadata?.noRemu       ? ` · ${parseMetadata.noRemu} no_remu`          : '')
+      + (parseMetadata?.aporte       ? ` · ${parseMetadata.aporte} aportes`          : '')
+      + (parseMetadata?.contribucion ? ` · ${parseMetadata.contribucion} contribuciones` : '');
   } else if (fileType === 'tab_control' || fileType === 'brutos_file' || fileType === 'gs_pers_file' || fileType === 'nr_file') {
     metaLine = `${parseMetadata?.totalRows ?? 0} registros`;
   } else {
@@ -531,6 +560,7 @@ function parseFile(arrayBuffer, fileType, mapping) {
     case 'brutos_file':                 return parseBrutos(arrayBuffer, mapping);
     case 'gs_pers_file':                return parseGsPers(arrayBuffer, mapping);
     case 'nr_file':                     return parseNr(arrayBuffer, mapping);
+    case 'concept_catalog':             return parseConceptCatalog(arrayBuffer);
     default: throw new Error(`Tipo de archivo desconocido: "${fileType}".`);
   }
 }
@@ -545,6 +575,7 @@ function fileTypeLabel(fileType) {
     brutos_file:                 'Reporte de Brutos',
     gs_pers_file:                'Reporte de GS Pers (Gastos Personales y Cochera)',
     nr_file:                     'Reporte de NR (No Remunerativos)',
+    concept_catalog:             'Catálogo de Conceptos',
   }[fileType] || fileType;
 }
 

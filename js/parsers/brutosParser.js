@@ -4,28 +4,29 @@
 // El resto de columnas se preservan en parsedRows para futuros usos.
 /* global XLSX */
 export { detectHeaders } from './nominaMaestra.js';
+import { buildParserMapping } from './conceptMatcher.js';
+import { CATALOGO_SEED } from '../data/catalogoSeed.js';
 
-const BRUTOS_STD_COLS = {
-  'LEGAJO':          'legajoColumn',
-  'SAL_BASE':        'salBaseColumn',
-  'A_CTA_FUT_AUMEN': 'aCuFutAumenColumn',
-};
-
-const BRUTOS_REQUIRED_KEYS = ['legajoColumn'];
+const LEGAJO_ALIASES = ['LEGAJO', 'ID_EMPLEADO', 'LEGAJO_SAP'];
 
 /**
  * Auto-detección de columnas del Reporte de Brutos.
- * Retorna el mapping si la columna de LEGAJO se encontró, null si no.
+ * @param {string[]} headers
+ * @param {Array}    [catalogRows] — catálogo activo; si no se pasa, usa CATALOGO_SEED
  */
-export function autoDetectBrutosMapping(headers) {
-  const mapping = {};
-  for (const [colName, key] of Object.entries(BRUTOS_STD_COLS)) {
-    const idx = headers.findIndex(h =>
-      h === colName || h.toLowerCase() === colName.toLowerCase()
-    );
-    if (idx >= 0) mapping[key] = headers[idx];
-  }
-  return BRUTOS_REQUIRED_KEYS.every(k => mapping[k]) ? mapping : null;
+export function autoDetectBrutosMapping(headers, catalogRows) {
+  const catalog = catalogRows || CATALOGO_SEED;
+  const lc = h => String(h).toLowerCase();
+
+  const legajoHeader = headers.find(h => LEGAJO_ALIASES.some(a => lc(a) === lc(h)));
+  if (!legajoHeader) return null;
+
+  const conceptMapping = buildParserMapping(headers, catalog, {
+    'SAL_BASE':        'salBaseColumn',
+    'A_CTA_FUT_AUMEN': 'aCuFutAumenColumn',
+  });
+
+  return { legajoColumn: legajoHeader, ...conceptMapping };
 }
 
 /**
