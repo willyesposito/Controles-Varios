@@ -49,6 +49,12 @@ import {
   summarizeNrReporte,
 } from './nr.js';
 
+import {
+  runRendVsTabu,
+  renderRendVsTabuResults,
+  summarizeRendVsTabu,
+} from './rendVsTabu.js';
+
 export const CONTROL_REGISTRY = {
 
   cat_x_empleados: {
@@ -217,6 +223,32 @@ export const CONTROL_REGISTRY = {
     run:           runNrReporte,
     summarize:     summarizeNrReporte,
     renderResults: renderNrReporteResults,
+  },
+
+
+  rend_vs_tabu: {
+    id:          'rend_vs_tabu',
+    label:       'RendvsTabu',
+    description: 'Cruza el Reporte de Rendimiento contra el Tabulado agrupado por centro de costo. '
+      + 'Compara PRECIO, ASIG. ESTÍMULO, RETIROS, CARGAS SS, PROV. MES, PROV. CCSS MES y COSTO TOTAL.',
+    help: {
+      what: 'Toma el Reporte de Rendimiento (resumen de costos por CC de M4) y lo contrasta '
+        + 'contra el Tabulado agrupado por centro de costo. Muestra diferencia por columna y por CC. '
+        + 'RETIROS se calcula de conceptos 9200 + 9205 sólo para filas EMPRESA = 03.',
+      how: [
+        'Bajá el Reporte de Rendimiento de M4.',
+        'Cargalo en el Paso 2 cuando te lo pida.',
+        'En el panel de configuración indicá qué columnas del Tabulado corresponden a cada importe.',
+        'Ejecutá. Las diferencias se muestran en rojo.',
+      ],
+    },
+    tabRequired: true,
+    additionalFiles: [
+      { key: 'rend', label: 'Reporte de Rendimiento', fileType: 'rend_file' },
+    ],
+    run:           runRendVsTabu,
+    summarize:     summarizeRendVsTabu,
+    renderResults: renderRendVsTabuResults,
   },
 
 };
