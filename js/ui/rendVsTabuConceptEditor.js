@@ -37,6 +37,7 @@ export function renderConceptGroupingEditor(container, tabRows, currentGrouping,
   const allCodes  = Object.keys(colByCode).sort((a, b) => Number(a) - Number(b));
 
   let grouping = currentGrouping ? deepClone(currentGrouping) : deepClone(DEFAULT_CONCEPT_CONFIG);
+  let uiState  = { sort: 'num', hideNotFound: false };
 
   function getAssignedCodes() {
     const s = new Set();
@@ -53,7 +54,15 @@ export function renderConceptGroupingEditor(container, tabRows, currentGrouping,
     const categorySections = CAT_META.map(cat => {
       const entries = grouping[cat.key] || [];
 
-      const chips = entries.map((entry, idx) => {
+      let displayEntries = entries.map((e, i) => ({ ...e, originalIdx: i }));
+      if (uiState.hideNotFound) displayEntries = displayEntries.filter(e => colByCode[e.code]);
+      if (uiState.sort === 'num') {
+        displayEntries.sort((a, b) => Number(a.code) - Number(b.code));
+      } else if (uiState.sort === 'alpha') {
+        displayEntries.sort((a, b) => (colByCode[a.code] || a.code).localeCompare(colByCode[b.code] || b.code, 'es'));
+      }
+
+      const chips = displayEntries.map(entry => {
         const found    = colByCode[entry.code];
         const label    = found ? esc(found) : esc(entry.code);
         const notFound = !found
@@ -63,11 +72,11 @@ export function renderConceptGroupingEditor(container, tabRows, currentGrouping,
         const signColor = entry.sign === 1 ? 'var(--color-success)' : 'var(--color-danger)';
         return `
           <span style="display:inline-flex;align-items:center;gap:3px;background:var(--color-surface);border:1px solid var(--color-border);border-radius:4px;padding:2px 5px;font-size:11px;margin:2px;">
-            <button type="button" data-sign="${cat.key}:${idx}"
+            <button type="button" data-sign="${cat.key}:${entry.originalIdx}"
               style="border:none;background:none;cursor:pointer;font-weight:700;padding:0 1px;color:${signColor};"
               title="Cambiar signo">${signLabel}</button>
             <span>${label}${notFound}</span>
-            <button type="button" data-remove="${cat.key}:${idx}"
+            <button type="button" data-remove="${cat.key}:${entry.originalIdx}"
               style="border:none;background:none;cursor:pointer;color:var(--color-danger);padding:0 1px;font-size:13px;line-height:1;"
               title="Quitar">×</button>
           </span>`;
@@ -126,6 +135,19 @@ export function renderConceptGroupingEditor(container, tabRows, currentGrouping,
           <button type="button" id="js-rtv-restore" class="btn btn--ghost btn--sm" style="white-space:nowrap;flex-shrink:0;">
             ↺ Restaurar defaults
           </button>
+        </div>
+        <div style="display:flex;align-items:center;gap:var(--sp-2);margin-bottom:var(--sp-3);flex-wrap:wrap;">
+          <span style="font-size:12px;color:var(--color-muted);">Ordenar:</span>
+          ${['none','num','alpha'].map(mode => {
+            const labels = { none: 'Sin ordenar', num: 'Por número', alpha: 'Alfabético' };
+            const active = uiState.sort === mode;
+            return `<button type="button" data-sort="${mode}" class="btn btn--ghost btn--sm"
+              style="${active ? 'font-weight:700;border-color:var(--color-primary);' : ''}">${labels[mode]}</button>`;
+          }).join('')}
+          <label style="margin-left:auto;display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;">
+            <input type="checkbox" id="js-rtv-hide-notfound" ${uiState.hideNotFound ? 'checked' : ''}>
+            Ocultar no encontrados en Tabulado
+          </label>
         </div>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:var(--sp-3);">
           ${categorySections}
@@ -188,6 +210,18 @@ export function renderConceptGroupingEditor(container, tabRows, currentGrouping,
     container.querySelector('#js-rtv-restore')?.addEventListener('click', () => {
       grouping = deepClone(DEFAULT_CONCEPT_CONFIG);
       onChange(deepClone(grouping));
+      renderEditor();
+    });
+
+    container.querySelectorAll('[data-sort]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        uiState.sort = btn.dataset.sort;
+        renderEditor();
+      });
+    });
+
+    container.querySelector('#js-rtv-hide-notfound')?.addEventListener('change', e => {
+      uiState.hideNotFound = e.target.checked;
       renderEditor();
     });
   }
