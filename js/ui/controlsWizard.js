@@ -83,18 +83,25 @@ export async function renderControlsWizard(root, clientId) {
   };
 
   root.innerHTML = `
-    <div class="page-content">
+    <div class="page-content" style="padding-bottom:80px;">
       <div class="page-actions">
         <div class="page-actions__title">
           <a href="#/" class="btn btn--ghost btn--sm">← Inicio</a>
           <h2 style="margin:0 0 0 var(--sp-3);">Controles — ${esc(client.name)}</h2>
         </div>
       </div>
-      <div class="wizard-steps" id="js-wizard-steps" style="margin:var(--sp-5) 0;"></div>
+      <div class="wizard-steps" id="js-wizard-steps" style="margin:var(--sp-3) 0;"></div>
       <div class="card">
-        <div class="card__body" id="js-step-content" style="padding:var(--sp-6);"></div>
+        <div class="card__body" id="js-step-content" style="padding:var(--sp-5);"></div>
       </div>
-      <div style="display:flex;justify-content:space-between;margin-top:var(--sp-5);" id="js-wizard-nav"></div>
+      <div id="js-wizard-nav" style="
+        position:sticky;bottom:0;z-index:20;
+        display:flex;justify-content:space-between;align-items:center;
+        margin-top:var(--sp-3);padding:var(--sp-3) var(--sp-4);
+        background:rgba(255,255,255,0.95);backdrop-filter:blur(6px);
+        border:1px solid var(--color-border);border-radius:var(--radius-md);
+        box-shadow:0 -2px 8px rgba(0,0,0,0.06);
+      "></div>
     </div>
   `;
 
@@ -145,13 +152,16 @@ function renderWizardNav(root, state) {
   const isLast  = state.step === 3;
   const canNext = canGoNext(state);
 
+  const hint = !canNext && !isLast ? nextStepHint(state) : '';
+
   nav.innerHTML = `
     <div>
       ${!isFirst
-        ? `<button class="btn btn--secondary" id="js-prev-btn">← Anterior</button>`
+        ? `<button class="btn btn--ghost btn--sm" id="js-prev-btn">← Anterior</button>`
         : ''}
     </div>
-    <div>
+    <div style="display:flex;align-items:center;gap:var(--sp-3);">
+      ${hint ? `<span class="text-sm text-muted" style="font-style:italic;">${hint}</span>` : ''}
       ${!isLast
         ? `<button class="btn btn--primary" id="js-next-btn" ${canNext ? '' : 'disabled'}>
              Siguiente →
@@ -167,6 +177,15 @@ function renderWizardNav(root, state) {
   nav.querySelector('#js-next-btn')?.addEventListener('click', () => {
     if (canGoNext(state)) { state.step++; render(root, state); }
   });
+}
+
+function nextStepHint(state) {
+  switch (state.step) {
+    case 0: return 'Cargá el Tabulado para continuar';
+    case 1: return 'Completá los archivos y columnas requeridas';
+    case 2: return 'Elegí un período';
+    default: return '';
+  }
 }
 
 function canGoNext(state) {
@@ -218,13 +237,12 @@ function renderStepTab(container, state, root) {
     : `📂 Sin catálogo cargado — se usará el catálogo estándar (${CATALOGO_SEED.length} conceptos).`;
 
   container.innerHTML = `
-    <h3 style="margin-bottom:var(--sp-2);">Paso 1 — Tabulado estandarizado</h3>
-    <p class="text-muted" style="margin-bottom:var(--sp-5);">
-      Este archivo es la base para todos los controles. Se carga una vez por sesión
-      y se comparte entre todos los controles seleccionados.
+    <h3 style="margin:0 0 var(--sp-1);">Paso 1 — Tabulado estandarizado</h3>
+    <p class="text-muted" style="margin:0 0 var(--sp-3);font-size:var(--text-sm);">
+      Este archivo es la base para todos los controles. Se carga una vez por sesión y se comparte entre los controles.
     </p>
 
-    <details style="margin-bottom:var(--sp-5);" ${state.catalog ? '' : 'open'}>
+    <details style="margin-bottom:var(--sp-3);" ${state.catalog ? '' : 'open'}>
       <summary style="
         cursor:pointer;font-size:var(--text-sm);font-weight:var(--fw-semibold);
         color:var(--color-primary);list-style:none;display:flex;align-items:center;
@@ -232,9 +250,9 @@ function renderStepTab(container, state, root) {
       ">
         <span>▸</span> Catálogo de Conceptos (opcional)
       </summary>
-      <div style="margin-top:var(--sp-3);padding:var(--sp-4);background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);">
+      <div style="margin-top:var(--sp-2);padding:var(--sp-3);background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);">
 
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:var(--sp-3);margin-bottom:var(--sp-3);position:relative;">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:var(--sp-3);margin-bottom:var(--sp-2);position:relative;">
           <p class="text-sm text-muted" style="margin:0;">
             El catálogo define qué columnas del Tabulado corresponden a cada concepto y a qué controles
             pertenecen. Si no cargás uno, se usa el catálogo estándar.
@@ -295,8 +313,8 @@ function renderStepTab(container, state, root) {
           </details>
         </div>
 
-        <div id="js-catalog-status" style="margin-bottom:var(--sp-3);">
-          <div class="alert ${state.catalog ? 'alert--success' : 'alert--info'}" style="margin:0;">
+        <div id="js-catalog-status" style="margin-bottom:var(--sp-2);">
+          <div class="alert ${state.catalog ? 'alert--success' : 'alert--info'}" style="margin:0;padding:var(--sp-2) var(--sp-3);font-size:var(--text-sm);">
             ${catSummary}
           </div>
         </div>
@@ -506,14 +524,14 @@ function renderStepControls(container, state, root) {
   }).join('');
 
   container.innerHTML = `
-    <h3 style="margin-bottom:var(--sp-2);">Paso 2 — Controles a ejecutar</h3>
-    <p class="text-muted" style="margin-bottom:var(--sp-4);">
+    <h3 style="margin:0 0 var(--sp-1);">Paso 2 — Controles a ejecutar</h3>
+    <p class="text-muted" style="margin:0 0 var(--sp-3);font-size:var(--text-sm);">
       Seleccioná los controles que querés ejecutar. Cada uno puede requerir cargar un archivo adicional.
     </p>
 
     ${buildHelpSection()}
 
-    <div class="pill-group" id="js-control-pills" style="margin-bottom:var(--sp-5);">
+    <div class="pill-group" id="js-control-pills" style="margin-bottom:var(--sp-3);">
       ${blocksHtml}
     </div>
     <div id="js-control-files"></div>
@@ -572,9 +590,9 @@ function renderStepControls(container, state, root) {
 
     for (const fileSpec of ctrl.additionalFiles) {
       const wrapper = document.createElement('div');
-      wrapper.style.marginBottom = 'var(--sp-6)';
+      wrapper.style.marginBottom = 'var(--sp-3)';
       wrapper.innerHTML = `
-        <h4 style="margin-bottom:var(--sp-3);">
+        <h4 style="margin:0 0 var(--sp-2);font-size:var(--text-base);">
           ${esc(ctrl.label)} — ${esc(fileSpec.label)}
         </h4>
       `;
@@ -780,12 +798,11 @@ function renderTabExtraConfig(container, state, root, { hasBrutos, hasGsPers, ha
       .join('');
 
   const panel = document.createElement('div');
-  panel.style.cssText = 'margin-top:var(--sp-6);padding:var(--sp-5);border:1px solid var(--color-border);border-radius:var(--radius-md);background:var(--color-surface);';
+  panel.style.cssText = 'margin-top:var(--sp-3);padding:var(--sp-3) var(--sp-4);border:1px solid var(--color-border);border-radius:var(--radius-md);background:var(--color-surface);';
   panel.innerHTML = `
-    <h4 style="margin:0 0 var(--sp-2);">Columnas del Tabulado — ${esc(headerTitle)}</h4>
-    <p class="text-muted" style="margin:0 0 var(--sp-4);font-size:var(--text-sm);">
-      Indicá qué columna del Tabulado corresponde a cada campo.
-      FECHA_INI y FECHA_FIN se calculan automáticamente del período seleccionado.
+    <h4 style="margin:0 0 var(--sp-1);font-size:var(--text-base);">Columnas del Tabulado — ${esc(headerTitle)}</h4>
+    <p class="text-muted" style="margin:0 0 var(--sp-3);font-size:var(--text-sm);">
+      Indicá qué columna del Tabulado corresponde a cada campo. FECHA_INI y FECHA_FIN se calculan del período.
     </p>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:var(--sp-3);">
       ${fields.map(f => {
@@ -832,8 +849,8 @@ function renderStepConfig(container, state) {
   const periods = periodOptions(13);
 
   container.innerHTML = `
-    <h3 style="margin-bottom:var(--sp-5);">Paso 3 — Período</h3>
-    <div class="form-group" style="max-width:320px;">
+    <h3 style="margin:0 0 var(--sp-3);">Paso 3 — Período</h3>
+    <div class="form-group" style="max-width:320px;margin-bottom:var(--sp-3);">
       <label class="form-label form-label--required">Período</label>
       <select class="form-select" id="js-period-select">
         ${periods.map(p =>
@@ -841,7 +858,7 @@ function renderStepConfig(container, state) {
         ).join('')}
       </select>
     </div>
-    <div class="form-group" style="max-width:480px;margin-top:var(--sp-4);">
+    <div class="form-group" style="max-width:480px;margin-bottom:0;">
       <label class="form-label">Notas (opcional)</label>
       <input type="text" class="form-input" id="js-notes-input"
              value="${esc(state.notes)}"
@@ -877,8 +894,8 @@ function renderStepExecute(container, state, root) {
   }).join('<br>');
 
   container.innerHTML = `
-    <h3 style="margin-bottom:var(--sp-5);">Paso 4 — Resumen</h3>
-    <div class="alert alert--info" style="margin-bottom:var(--sp-5);">
+    <h3 style="margin:0 0 var(--sp-3);">Paso 4 — Resumen</h3>
+    <div class="alert alert--info" style="margin-bottom:var(--sp-3);">
       <strong>Cliente:</strong> ${esc(state.client.name)}<br>
       <strong>Período:</strong> ${esc(state.period)}<br>
       <strong>Controles:</strong> ${esc(ctrlList)}<br>

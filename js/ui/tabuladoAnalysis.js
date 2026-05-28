@@ -125,52 +125,55 @@ export function renderTabuladoAnalysis(container, tabData, catalogRows, selected
     : '<p class="text-sm text-muted" style="margin:0;">— Todos los conceptos esperados están presentes.</p>';
 
   // ── Render del panel completo ──────────────────────────────────────────────
-  const warnIcon  = nOrph > 0 ? '⚠️' : '';
-  const missIcon  = nMiss > 0 ? '⛔' : '';
+  // Reconocidas se colapsa por defecto (lo más largo). Huérfanas/faltantes se abren solo si hay algo.
+  const summaryCounts = `
+    <span style="color:var(--color-match-exact);font-weight:600;">✓ ${nRec}</span>
+    <span style="color:var(--color-text-muted);">·</span>
+    <span style="color:${nOrph > 0 ? '#B45309' : 'var(--color-text-muted)'};font-weight:${nOrph > 0 ? '600' : 'normal'};">⚠ ${nOrph} huérfanas</span>
+    <span style="color:var(--color-text-muted);">·</span>
+    <span style="color:${nMiss > 0 ? 'var(--color-danger)' : 'var(--color-text-muted)'};font-weight:${nMiss > 0 ? '600' : 'normal'};">✗ ${nMiss} faltantes</span>
+  `;
+
+  const isAllGood = nOrph === 0 && nMiss === 0;
 
   container.innerHTML = `
-    <details style="margin-bottom:var(--sp-5);" open>
+    <details style="margin-bottom:var(--sp-3);" ${isAllGood ? '' : 'open'}>
       <summary style="
         cursor:pointer;font-size:var(--text-sm);font-weight:var(--fw-semibold);
         color:var(--color-primary);list-style:none;display:flex;align-items:center;
-        gap:var(--sp-2);user-select:none;margin-bottom:var(--sp-1);
+        gap:var(--sp-2);user-select:none;flex-wrap:wrap;
       ">
-        <span>▾</span> 📊 Análisis del Tabulado — ${total} columnas detectadas
+        <span>${isAllGood ? '▸' : '▾'}</span> 📊 Análisis del Tabulado (${total} cols)
+        <span style="margin-left:var(--sp-2);display:flex;gap:var(--sp-2);align-items:center;font-size:var(--text-sm);font-weight:400;">
+          ${summaryCounts}
+        </span>
       </summary>
-      <div style="margin-top:var(--sp-3);padding:var(--sp-4);background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);display:flex;flex-direction:column;gap:var(--sp-4);">
+      <div style="margin-top:var(--sp-2);padding:var(--sp-3);background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);display:flex;flex-direction:column;gap:var(--sp-3);">
 
+        <details>
+          <summary style="cursor:pointer;font-size:var(--text-sm);font-weight:var(--fw-semibold);list-style:none;display:flex;gap:var(--sp-2);align-items:center;">
+            <span>▸</span> ✅ Reconocidas (${nRec})
+          </summary>
+          <div style="margin-top:var(--sp-2);overflow-x:auto;">${nRec ? recHtml : '<p class="text-sm text-muted" style="margin:0;">— Ninguna columna reconocida.</p>'}</div>
+        </details>
+
+        ${nOrph > 0 ? `
         <details open>
-          <summary style="cursor:pointer;font-size:var(--text-sm);font-weight:var(--fw-semibold);list-style:none;display:flex;gap:var(--sp-2);align-items:center;">
-            <span>▾</span>
-            ✅ Reconocidas (${nRec})
-            <span style="color:var(--color-text-muted);font-size:0.85em;font-weight:normal;">
-              — columnas que matchearon con un concepto del catálogo
-            </span>
+          <summary style="cursor:pointer;font-size:var(--text-sm);font-weight:var(--fw-semibold);list-style:none;display:flex;gap:var(--sp-2);align-items:center;color:#B45309;">
+            <span>▾</span> ⚠ Huérfanas (${nOrph}) <span style="color:var(--color-text-muted);font-weight:400;font-size:0.85em;">— no están en el catálogo</span>
           </summary>
-          <div style="margin-top:var(--sp-3);overflow-x:auto;">${nRec ? recHtml : '<p class="text-sm text-muted" style="margin:0;">— Ninguna columna reconocida.</p>'}</div>
+          <div style="margin-top:var(--sp-2);overflow-x:auto;">${orphHtml}</div>
         </details>
+        ` : ''}
 
-        <details ${nOrph > 0 ? 'open' : ''}>
-          <summary style="cursor:pointer;font-size:var(--text-sm);font-weight:var(--fw-semibold);list-style:none;display:flex;gap:var(--sp-2);align-items:center;">
-            <span>${nOrph > 0 ? '▾' : '▸'}</span>
-            ${warnIcon} Huérfanas (${nOrph})
-            <span style="color:var(--color-text-muted);font-size:0.85em;font-weight:normal;">
-              — columnas del Tabulado que no están en el catálogo
-            </span>
+        ${nMiss > 0 ? `
+        <details open>
+          <summary style="cursor:pointer;font-size:var(--text-sm);font-weight:var(--fw-semibold);list-style:none;display:flex;gap:var(--sp-2);align-items:center;color:var(--color-danger);">
+            <span>▾</span> ✗ Esperadas faltantes (${nMiss}) <span style="color:var(--color-text-muted);font-weight:400;font-size:0.85em;">— conceptos del catálogo que faltan en el Tabulado</span>
           </summary>
-          <div style="margin-top:var(--sp-3);overflow-x:auto;">${orphHtml}</div>
+          <div style="margin-top:var(--sp-2);overflow-x:auto;">${missHtml}</div>
         </details>
-
-        <details ${nMiss > 0 ? 'open' : ''}>
-          <summary style="cursor:pointer;font-size:var(--text-sm);font-weight:var(--fw-semibold);list-style:none;display:flex;gap:var(--sp-2);align-items:center;">
-            <span>${nMiss > 0 ? '▾' : '▸'}</span>
-            ${missIcon} Esperadas faltantes (${nMiss})
-            <span style="color:var(--color-text-muted);font-size:0.85em;font-weight:normal;">
-              — conceptos del catálogo asignados a controles activos que no aparecen en el Tabulado
-            </span>
-          </summary>
-          <div style="margin-top:var(--sp-3);overflow-x:auto;">${missHtml}</div>
-        </details>
+        ` : ''}
 
       </div>
     </details>

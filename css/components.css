@@ -487,13 +487,15 @@
 
 /* ── File upload ─────────────────────────────────────────────── */
 .file-drop {
-  border: 2px dashed var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: var(--sp-10);
-  text-align: center;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--sp-3) var(--sp-4);
   background: var(--color-bg);
   cursor: pointer;
   transition: all var(--transition);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
 }
 .file-drop:hover,
 .file-drop--dragover {
@@ -501,12 +503,13 @@
   background: var(--color-info-bg);
 }
 .file-drop__icon {
-  font-size: 40px;
-  margin-bottom: var(--sp-3);
+  font-size: 20px;
+  line-height: 1;
 }
 .file-drop__text {
   color: var(--color-wordmark);
   font-size: var(--text-sm);
+  flex: 1;
 }
 .file-drop__text strong {
   color: var(--color-primary);

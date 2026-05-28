@@ -109,28 +109,23 @@ export function renderConceptGroupingEditor(container, tabRows, currentGrouping,
         `<option value="${cat.key}">${esc(cat.label)}</option>`
       ).join('');
       return `
-        <div style="display:flex;align-items:center;gap:var(--sp-2);padding:var(--sp-1) 0;border-bottom:1px solid var(--color-border);">
-          <span style="flex:1;font-size:var(--text-sm);font-family:monospace;">${esc(colByCode[c])}</span>
-          <label style="display:flex;align-items:center;gap:4px;font-size:11px;white-space:nowrap;">
-            <input type="checkbox" data-orphan-neg="${esc(c)}" style="margin:0;"> resta
+        <div style="display:flex;align-items:center;gap:4px;padding:2px 6px;border:1px solid var(--color-border);border-radius:4px;background:var(--color-bg);min-width:0;">
+          <span style="flex:1;font-size:11px;font-family:monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(colByCode[c])}">${esc(colByCode[c])}</span>
+          <label style="display:flex;align-items:center;gap:2px;font-size:10px;white-space:nowrap;color:var(--color-text-muted);">
+            <input type="checkbox" data-orphan-neg="${esc(c)}" style="margin:0;width:11px;height:11px;">−
           </label>
           <select class="form-select" data-assign-orphan="${esc(c)}"
-            style="width:160px;font-size:11px;height:26px;padding:2px 6px;">
-            <option value="">— Asignar a... —</option>
+            style="width:auto;max-width:120px;font-size:10px;height:22px;padding:1px 4px;">
+            <option value="">→ ...</option>
             ${catOpts}
           </select>
         </div>`;
     }).join('');
 
     container.innerHTML = `
-      <div style="margin-top:var(--sp-6);padding:var(--sp-5);border:1px solid var(--color-border);border-radius:var(--radius-md);background:var(--color-surface);">
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:var(--sp-4);gap:var(--sp-3);">
-          <div>
-            <h4 style="margin:0 0 var(--sp-1);">Agrupación de conceptos — RendvsTabu</h4>
-            <p class="text-muted" style="margin:0;font-size:var(--text-sm);">
-              Definí qué conceptos del Tabulado se suman en cada categoría. Los cambios se guardan al ejecutar.
-            </p>
-          </div>
+      <div style="margin-top:var(--sp-3);padding:var(--sp-3) var(--sp-4);border:1px solid var(--color-border);border-radius:var(--radius-md);background:var(--color-surface);">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--sp-2);gap:var(--sp-3);">
+          <h4 style="margin:0;font-size:var(--text-base);">Agrupación de conceptos — RendvsTabu</h4>
           <button type="button" id="js-rtv-restore" class="btn btn--ghost btn--sm" style="white-space:nowrap;flex-shrink:0;">
             ↺ Restaurar defaults
           </button>
@@ -152,12 +147,16 @@ export function renderConceptGroupingEditor(container, tabRows, currentGrouping,
           ${categorySections}
         </div>
         ${orphanCodes.length > 0 ? `
-          <div style="margin-top:var(--sp-4);padding-top:var(--sp-3);border-top:1px solid var(--color-border);">
-            <h5 style="margin:0 0 var(--sp-2);font-size:var(--text-sm);">
+          <details style="margin-top:var(--sp-3);padding-top:var(--sp-3);border-top:1px solid var(--color-border);" open>
+            <summary style="cursor:pointer;font-size:var(--text-sm);font-weight:600;margin-bottom:var(--sp-2);list-style:none;display:flex;align-items:center;gap:var(--sp-2);">
+              <span class="js-orph-arrow">▾</span>
               Sin asignar — ${orphanCodes.length} concepto${orphanCodes.length !== 1 ? 's' : ''} del Tabulado
-            </h5>
-            ${orphanRows}
-          </div>` : ''}
+              <span class="text-muted" style="font-weight:400;font-size:11px;">(− = resta, → asigná a una categoría)</span>
+            </summary>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:4px;">
+              ${orphanRows}
+            </div>
+          </details>` : ''}
       </div>`;
 
     // ── Eventos ──────────────────────────────────────────────────────────────

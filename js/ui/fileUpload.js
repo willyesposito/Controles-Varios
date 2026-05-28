@@ -157,7 +157,6 @@ export async function initFileUploadStep(container, { clientId, fileType, existi
           () => initFileUploadStep(container, { clientId, fileType, existingData: null, onComplete }),
           onComplete
         );
-        onComplete(data);
       } catch (err) {
         renderError(container, `Error al procesar el catálogo: ${err.message}`,
           () => initFileUploadStep(container, { clientId, fileType, existingData: null, onComplete }));
@@ -197,9 +196,6 @@ export async function initFileUploadStep(container, { clientId, fileType, existi
             onComplete
           );
 
-          // Avisarle al wizard que el archivo está listo
-          onComplete(data);
-
         } catch (err) {
           renderError(container, `Error al procesar: ${err.message}`,
             () => renderMappingForm(container, {
@@ -213,7 +209,6 @@ export async function initFileUploadStep(container, { clientId, fileType, existi
                   renderAlreadyLoaded(container, data,
                     () => initFileUploadStep(container, { clientId, fileType, existingData: null, onComplete }),
                     onComplete);
-                  onComplete(data);
                 } catch (e2) {
                   renderError(container, e2.message,
                     () => initFileUploadStep(container, { clientId, fileType, existingData, onComplete }));
@@ -236,14 +231,10 @@ function renderDropZone(container, fileType, onFile) {
     <div class="file-drop" id="js-drop-zone">
       <div class="file-drop__icon">📂</div>
       <div class="file-drop__text">
-        <strong>Arrastrá el Excel acá</strong> o hacé clic para elegir<br>
-        <small>${fileTypeLabel(fileType)} (.xlsx)</small>
+        <strong>${fileTypeLabel(fileType)}</strong> — arrastrá o hacé clic para elegir (.xlsx)
       </div>
       <input type="file" accept=".xlsx,.xls" style="display:none" id="js-file-input">
     </div>
-    <p class="text-sm text-muted" style="margin-top:var(--sp-3);text-align:center;">
-      Los datos se procesan en tu navegador — no se envían a ningún servidor.
-    </p>
   `;
 
   const dropZone  = container.querySelector('#js-drop-zone');
@@ -337,20 +328,15 @@ function renderAlreadyLoaded(container, existingData, onReplace, onComplete) {
   }
 
   container.innerHTML = `
-    <div class="alert alert--success" style="margin-bottom:var(--sp-4);">
-      ✅ <strong>${escHtml(fileName)}</strong> — procesado correctamente
-      <br>
-      <span class="text-sm">
-        ${metaLine}
-        ${warns}
-      </span>
-    </div>
-    <div style="display:flex;gap:var(--sp-3);">
-      <button class="btn btn--primary" id="js-keep-btn">✓ Usar este archivo</button>
-      <button class="btn btn--ghost" id="js-replace-btn">↺ Cargar otro</button>
+    <div style="display:flex;align-items:center;gap:var(--sp-3);padding:var(--sp-2) var(--sp-3);border:1px solid var(--color-match-exact);background:var(--color-match-exact-bg);border-radius:var(--radius-md);font-size:var(--text-sm);">
+      <span style="color:var(--color-match-exact);font-weight:600;">✓</span>
+      <strong style="flex-shrink:0;">${escHtml(fileName)}</strong>
+      <span style="color:var(--color-text-muted);flex:1;">${metaLine}${warns}</span>
+      <button class="btn btn--ghost btn--sm" id="js-replace-btn" style="flex-shrink:0;">↺ Cambiar</button>
     </div>
   `;
-  container.querySelector('#js-keep-btn').addEventListener('click', () => onComplete(existingData));
+  // El archivo ya está confirmado — avisamos al wizard sin esperar click adicional
+  onComplete(existingData);
   container.querySelector('#js-replace-btn').addEventListener('click', onReplace);
 }
 
@@ -365,19 +351,21 @@ function renderMappingForm(container, { headers, preview, fileType, savedMapping
 
   // Preview de las primeras filas
   const previewHtml = preview?.length ? `
-    <div style="margin-bottom:var(--sp-5);overflow-x:auto;">
-      <p class="text-sm text-muted" style="margin-bottom:var(--sp-2);">
-        Vista previa — primeras filas del archivo (para que puedas identificar las columnas):
-      </p>
-      <table class="data-table data-table--compact">
-        <thead><tr>${headers.map(h => `<th>${escHtml(h)}</th>`).join('')}</tr></thead>
-        <tbody>
-          ${(preview || []).slice(0, 3).map(row =>
-            `<tr>${headers.map((_, i) => `<td>${escHtml(fmtPreviewCell(row[i]))}</td>`).join('')}</tr>`
-          ).join('')}
-        </tbody>
-      </table>
-    </div>
+    <details style="margin-bottom:var(--sp-3);">
+      <summary style="cursor:pointer;font-size:var(--text-sm);color:var(--color-primary);margin-bottom:var(--sp-2);">
+        ▸ Vista previa del archivo (${preview.slice(0, 3).length} filas)
+      </summary>
+      <div style="overflow-x:auto;">
+        <table class="data-table data-table--compact">
+          <thead><tr>${headers.map(h => `<th>${escHtml(h)}</th>`).join('')}</tr></thead>
+          <tbody>
+            ${(preview || []).slice(0, 3).map(row =>
+              `<tr>${headers.map((_, i) => `<td>${escHtml(fmtPreviewCell(row[i]))}</td>`).join('')}</tr>`
+            ).join('')}
+          </tbody>
+        </table>
+      </div>
+    </details>
   ` : '';
 
   // Construir opciones del selector de columnas
@@ -413,7 +401,7 @@ function renderMappingForm(container, { headers, preview, fileType, savedMapping
 
   // Campos estándar en grid horizontal
   const stdFieldsHtml = fields.length === 0 ? '' : `
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:var(--sp-3) var(--sp-5);margin-bottom:var(--sp-5);">
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:var(--sp-2) var(--sp-3);margin-bottom:var(--sp-3);">
       ${fields.map(f => {
         const val   = savedMapping?.[f.key] || '';
         const level = matchLevel(val);
@@ -493,7 +481,7 @@ function renderMappingForm(container, { headers, preview, fileType, savedMapping
     : '💾 Se pre-completó con el perfil guardado — verificá que siga siendo correcto.';
 
   container.innerHTML = `
-    <div class="alert alert--info" style="margin-bottom:var(--sp-4);">
+    <div class="alert alert--info" style="margin-bottom:var(--sp-2);padding:var(--sp-2) var(--sp-3);font-size:var(--text-sm);">
       📄 <strong>${escHtml(fileName)}</strong> — ${headers.length} columnas detectadas.
       ${hasSaved ? savedMsg : 'Primera vez: indicá qué columna corresponde a cada campo.'}
     </div>
@@ -501,9 +489,9 @@ function renderMappingForm(container, { headers, preview, fileType, savedMapping
     <form id="js-mapping-form">
       ${stdFieldsHtml}
       ${nombreHtml}
-      <div style="display:flex;gap:var(--sp-3);margin-top:var(--sp-5);">
-        <button type="submit" class="btn btn--primary">✓ Confirmar y procesar</button>
-        <button type="button" class="btn btn--ghost" id="js-cancel-mapping">← Cancelar</button>
+      <div style="display:flex;gap:var(--sp-2);margin-top:var(--sp-3);">
+        <button type="submit" class="btn btn--primary btn--sm">✓ Confirmar y procesar</button>
+        <button type="button" class="btn btn--ghost btn--sm" id="js-cancel-mapping">← Cancelar</button>
       </div>
     </form>
   `;
