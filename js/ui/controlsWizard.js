@@ -40,10 +40,9 @@ const AUTO_DETECT = {
 };
 
 // IDs de controles agrupados (para validación y detección de grupos seleccionados)
-const BRUTOS_IDS       = ['brutos', 'brutos_reporte'];
-const GS_PERS_IDS      = ['gs_pers', 'gs_pers_reporte'];
-const NR_IDS           = ['nr', 'nr_reporte'];
-const REND_VS_TABU_IDS = ['rend_vs_tabu'];
+const BRUTOS_IDS  = ['brutos', 'brutos_reporte'];
+const GS_PERS_IDS = ['gs_pers', 'gs_pers_reporte'];
+const NR_IDS      = ['nr', 'nr_reporte'];
 
 export async function renderControlsWizard(root, clientId) {
   const client = await getClient(clientId);
@@ -199,12 +198,6 @@ function canGoNext(state) {
           ...TAB_NR_OTROS_FIELDS,
         ].map(f => f.key);
         if (nrRequired.some(k => !cfg[k])) return false;
-      }
-      // Si hay RendvsTabu, los 6 campos de importes son obligatorios
-      const hasRendVsTabu = state.selectedControls.some(id => REND_VS_TABU_IDS.includes(id));
-      if (hasRendVsTabu) {
-        const rvtRequired = TAB_REND_TABU_FIELDS.filter(f => f.required).map(f => f.key);
-        if (rvtRequired.some(k => !cfg[k])) return false;
       }
       return true;
     }
@@ -607,12 +600,11 @@ function renderStepControls(container, state, root) {
   }
 
   // Panel de configuración de columnas del Tabulado para Brutos, GS Pers, NR y/o RendvsTabu
-  const hasBrutos     = state.selectedControls.some(id => BRUTOS_IDS.includes(id));
-  const hasGsPers     = state.selectedControls.some(id => GS_PERS_IDS.includes(id));
-  const hasNr         = state.selectedControls.some(id => NR_IDS.includes(id));
-  const hasRendVsTabu = state.selectedControls.some(id => REND_VS_TABU_IDS.includes(id));
-  if (hasBrutos || hasGsPers || hasNr || hasRendVsTabu) {
-    renderTabExtraConfig(filesArea, state, root, { hasBrutos, hasGsPers, hasNr, hasRendVsTabu });
+  const hasBrutos = state.selectedControls.some(id => BRUTOS_IDS.includes(id));
+  const hasGsPers = state.selectedControls.some(id => GS_PERS_IDS.includes(id));
+  const hasNr     = state.selectedControls.some(id => NR_IDS.includes(id));
+  if (hasBrutos || hasGsPers || hasNr) {
+    renderTabExtraConfig(filesArea, state, root, { hasBrutos, hasGsPers, hasNr });
   }
 }
 
@@ -666,21 +658,6 @@ const TAB_NR_OTROS_FIELDS = [
   { key: 'tabIncrementoStColumn',   label: 'INCREMENTO_ST — columna en Tabulado',   required: true },
 ];
 
-const TAB_REND_TABU_FIELDS = [
-  { key: 'tabRvtPrecioColumn',     label: 'PRECIO — columna en Tabulado',          required: true },
-  { key: 'tabRvtEstimuloColumn',   label: 'ASIG. ESTÍMULO — columna en Tabulado',  required: true },
-  { key: 'tabRvtCargasColumn',     label: 'CARGAS SS — columna en Tabulado',        required: true },
-  { key: 'tabRvtProvMesColumn',    label: 'PROVISIÓN MES — columna en Tabulado',   required: true },
-  { key: 'tabRvtProvCcssColumn',   label: 'PROV. CCSS MES — columna en Tabulado',  required: true },
-  { key: 'tabRvtCostoTotalColumn', label: 'COSTO TOTAL — columna en Tabulado',     required: true },
-];
-
-const TAB_REND_TABU_RETIROS_FIELDS = [
-  { key: 'tabRvtEmpresaColumn',  label: 'EMPRESA — columna en Tabulado (para filtro Retiros Emp.03)', required: false },
-  { key: 'tabRvtRet9200Column',  label: '9200 — columna en Tabulado (Retiros Emp.03)', required: false },
-  { key: 'tabRvtRet9205Column',  label: '9205 — columna en Tabulado (Retiros Emp.03)', required: false },
-];
-
 // Mapa CODIGO del catálogo → clave del tabExtraConfig (con prefijo "tab")
 const TAB_EXTRA_CODIGO_TO_KEY = {
   'SAL_BASE':        'tabSalBaseColumn',
@@ -723,17 +700,6 @@ function autoDetectTabExtraConfig(tabHeaders, catalogRows) {
   // Conceptos del catálogo → usar buildParserMapping con normalización + alias + fuzzy
   const conceptMapping = buildParserMapping(tabHeaders, catalog, TAB_EXTRA_CODIGO_TO_KEY);
 
-  // RendVsTabu: columnas de importes pre-calculados en el Tabulado
-  const rvtPrecio   = tabHeaders.find(h => lc(h) === 'precio') || '';
-  const rvtEstimulo = find('estimulo', 'estímulo');
-  const rvtCargas   = tabHeaders.find(h => lc(h).includes('cargas social') && !lc(h).includes('prov')) || '';
-  const rvtProvMes  = find('provisión mes', 'provision mes');
-  const rvtProvCcss = find('provisión cargas', 'provision cargas');
-  const rvtTotal    = tabHeaders.find(h => lc(h) === 'costo total') || '';
-  const rvtEmpresa  = tabHeaders.find(h => lc(h) === 'empresa') || '';
-  const rvtRet9200  = tabHeaders.find(h => String(h).trim().startsWith('9200')) || '';
-  const rvtRet9205  = tabHeaders.find(h => String(h).trim().startsWith('9205')) || '';
-
   return {
     ...conceptMapping,
     // Campos de empleado (hardcoded, no conceptos)
@@ -744,20 +710,10 @@ function autoDetectTabExtraConfig(tabHeaders, catalogRows) {
     tabFecPagoColumn:     find('fec_pago', 'fecha_pago', 'pago'),
     tabIdCentroTrabColumn: idCentroTrab,
     tabIdCategoriaColumn:  idCategoria,
-    // RendVsTabu
-    tabRvtPrecioColumn:     rvtPrecio,
-    tabRvtEstimuloColumn:   rvtEstimulo,
-    tabRvtCargasColumn:     rvtCargas,
-    tabRvtProvMesColumn:    rvtProvMes,
-    tabRvtProvCcssColumn:   rvtProvCcss,
-    tabRvtCostoTotalColumn: rvtTotal,
-    tabRvtEmpresaColumn:    rvtEmpresa,
-    tabRvtRet9200Column:    rvtRet9200,
-    tabRvtRet9205Column:    rvtRet9205,
   };
 }
 
-function renderTabExtraConfig(container, state, root, { hasBrutos, hasGsPers, hasNr, hasRendVsTabu }) {
+function renderTabExtraConfig(container, state, root, { hasBrutos, hasGsPers, hasNr }) {
   const tabHeaders = state.tab?.parsedRows?.length > 0
     ? Object.keys(state.tab.parsedRows[0])
     : [];
@@ -792,20 +748,13 @@ function renderTabExtraConfig(container, state, root, { hasBrutos, hasGsPers, ha
       { groupHeader: 'Otros NR' },
       ...TAB_NR_OTROS_FIELDS,
     ] : []),
-    ...(hasRendVsTabu ? [
-      { groupHeader: 'Rendimiento vs Tabulado — Importes' },
-      ...TAB_REND_TABU_FIELDS,
-      { groupHeader: 'Retiros (solo Empresa 03)' },
-      ...TAB_REND_TABU_RETIROS_FIELDS,
-    ] : []),
     ...TAB_SHARED_FIELDS,
   ];
 
   const parts = [
-    hasBrutos     && 'Brutos',
-    hasGsPers     && 'GS Pers',
-    hasNr         && 'Control NR',
-    hasRendVsTabu && 'RendvsTabu',
+    hasBrutos && 'Brutos',
+    hasGsPers && 'GS Pers',
+    hasNr     && 'Control NR',
   ].filter(Boolean);
   const headerTitle = parts.join(' / ');
 
@@ -955,7 +904,7 @@ async function executeControls(state, statusEl) {
 
     // 3. Guardar config extra del Tabulado (Brutos / GS Pers) si aplica
     const needsTabExtra = state.selectedControls.some(id =>
-      BRUTOS_IDS.includes(id) || GS_PERS_IDS.includes(id) || REND_VS_TABU_IDS.includes(id)
+      BRUTOS_IDS.includes(id) || GS_PERS_IDS.includes(id)
     );
     if (needsTabExtra && Object.keys(state.tabExtraConfig).length > 0) {
       // La clave de profile se mantiene como 'brutos_tab_config' por compatibilidad

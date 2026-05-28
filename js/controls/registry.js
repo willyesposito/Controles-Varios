@@ -238,7 +238,6 @@ export const CONTROL_REGISTRY = {
       how: [
         'Bajá el Reporte de Rendimiento de M4.',
         'Cargalo en el Paso 2 cuando te lo pida.',
-        'En el panel de configuración indicá qué columnas del Tabulado corresponden a cada importe.',
         'Ejecutá. Las diferencias se muestran en rojo.',
       ],
     },

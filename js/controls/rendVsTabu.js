@@ -1,27 +1,62 @@
 // rendVsTabu.js — Control 5: Rendimiento vs Tabulado (RendvsTabu)
 //
-// Lógica: agrupa el Tabulado por centro de costo, suma las columnas de importe
-// pre-calculadas (PRECIO, ASIG. ESTÍMULO, CARGAS SS, PROV. MES, PROV. CCSS MES,
-// COSTO TOTAL) y las compara contra el Reporte de Rendimiento de M4.
-// RETIROS se calcula sumando conceptos 9200 + 9205 solo para filas EMPRESA = 03.
+// Compara el Reporte de Rendimiento de M4 (por CC) contra el Tabulado.
+// Calcula PRECIO, ASIG. ESTÍMULO, CARGAS SS, PROV. MES, PROV. CCSS MES y RETIROS
+// directamente de las columnas individuales del Tabulado (ej: "1003-SUELDO"),
+// usando los conceptos definidos en "Detalles de conceptos".
+
+// ── Conceptos del Tabulado por categoría ─────────────────────────────────────
+// sign: +1 suma, -1 resta
+// Fuente: pestaña "Detalles de conceptos" del archivo de referencia.
+
+const CONCEPT_CONFIG = {
+  precio: [
+    { code: '1153', sign: 1 }, { code: '2000', sign: 1 }, { code: '2996', sign: 1 },
+    { code: '3025', sign: 1 }, { code: '3999', sign: 1 }, { code: '4897', sign: 1 },
+    { code: '8505', sign: 1 }, { code: '8508', sign: 1 }, { code: '5800', sign: 1 },
+    { code: '1003', sign: 1 }, { code: '1004', sign: 1 }, { code: '1163', sign: 1 },
+    { code: '1017', sign: 1 }, { code: '4092', sign: 1 }, { code: '4110', sign: 1 },
+    { code: '4091', sign: 1 }, { code: '4130', sign: 1 }, { code: '4473', sign: 1 },
+  ],
+  estimulo: [
+    { code: '1006', sign: 1 }, { code: '1009', sign: 1 },
+  ],
+  cargas: [
+    { code: '6050', sign:  1 }, { code: '6093', sign:  1 }, { code: '6100', sign:  1 },
+    { code: '6110', sign: -1 }, { code: '6120', sign:  1 }, { code: '6130', sign: -1 },
+    { code: '6134', sign:  1 }, { code: '6145', sign:  1 }, { code: '7015', sign:  1 },
+  ],
+  provMes: [
+    { code: '3670', sign:  1 }, { code: '3674', sign:  1 }, { code: '3570', sign:  1 },
+    { code: '3574', sign: -1 }, { code: '7291', sign:  1 }, { code: '7290', sign: -1 },
+  ],
+  provCcss: [
+    { code: '3672', sign:  1 }, { code: '3676', sign:  1 }, { code: '3572', sign:  1 },
+    { code: '3576', sign: -1 }, { code: '7292', sign:  1 }, { code: '7289', sign: -1 },
+  ],
+  // Solo para filas donde EMPRESA = 03
+  retiros: [
+    { code: '9200', sign: 1 }, { code: '9205', sign: 1 },
+  ],
+};
 
 // ── Definición de columnas de comparación ────────────────────────────────────
 
 const COLS = [
   { key: 'precio',   label: 'PRECIO',          rKey: 'rPrecio',   tKey: 'tPrecio',   dKey: 'dPrecio',
-    tabKey: 'tabRvtPrecioColumn',   hdr: 'rgba(0,112,192,0.22)',  bg: 'rgba(0,112,192,0.08)' },
+    hdr: 'rgba(0,112,192,0.22)',  bg: 'rgba(0,112,192,0.08)' },
   { key: 'estimulo', label: 'ASIG. ESTÍMULO',  rKey: 'rEstimulo', tKey: 'tEstimulo', dKey: 'dEstimulo',
-    tabKey: 'tabRvtEstimuloColumn', hdr: 'rgba(0,156,64,0.22)',   bg: 'rgba(0,156,64,0.08)' },
+    hdr: 'rgba(0,156,64,0.22)',   bg: 'rgba(0,156,64,0.08)' },
   { key: 'retiros',  label: 'RETIROS',         rKey: 'rRetiros',  tKey: 'tRetiros',  dKey: 'dRetiros',
-    tabKey: null,                   hdr: 'rgba(112,48,160,0.22)', bg: 'rgba(112,48,160,0.08)' },
+    hdr: 'rgba(112,48,160,0.22)', bg: 'rgba(112,48,160,0.08)' },
   { key: 'cargas',   label: 'CARGAS SS',       rKey: 'rCargas',   tKey: 'tCargas',   dKey: 'dCargas',
-    tabKey: 'tabRvtCargasColumn',   hdr: 'rgba(192,0,0,0.22)',    bg: 'rgba(192,0,0,0.08)' },
+    hdr: 'rgba(192,0,0,0.22)',    bg: 'rgba(192,0,0,0.08)' },
   { key: 'provMes',  label: 'PROV. MES',       rKey: 'rProvMes',  tKey: 'tProvMes',  dKey: 'dProvMes',
-    tabKey: 'tabRvtProvMesColumn',  hdr: 'rgba(0,176,240,0.22)',  bg: 'rgba(0,176,240,0.08)' },
+    hdr: 'rgba(0,176,240,0.22)',  bg: 'rgba(0,176,240,0.08)' },
   { key: 'provCcss', label: 'PROV. CCSS MES',  rKey: 'rProvCcss', tKey: 'tProvCcss', dKey: 'dProvCcss',
-    tabKey: 'tabRvtProvCcssColumn', hdr: 'rgba(0,70,127,0.22)',   bg: 'rgba(0,70,127,0.08)' },
+    hdr: 'rgba(0,70,127,0.22)',   bg: 'rgba(0,70,127,0.08)' },
   { key: 'total',    label: 'COSTO TOTAL',     rKey: 'rTotal',    tKey: 'tTotal',    dKey: 'dTotal',
-    tabKey: 'tabRvtCostoTotalColumn', hdr: 'rgba(64,64,64,0.18)', bg: 'rgba(64,64,64,0.07)' },
+    hdr: 'rgba(64,64,64,0.18)',   bg: 'rgba(64,64,64,0.07)' },
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -39,13 +74,12 @@ function esc(str) {
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-// Normaliza código de CC: quita ceros iniciales → "0011" y 11 se comparan igual
+// Normaliza código de CC: quita ceros iniciales → "0011" y "11" se comparan igual
 function normCCCode(v) {
   const s = String(v ?? '').trim().replace(/^0+/, '');
   return s || null;
 }
 
-// Normaliza nombre de CC: minúsculas, espacios simples
 function normCCName(v) {
   return String(v ?? '').trim().toLowerCase().replace(/\s+/g, ' ') || null;
 }
@@ -57,6 +91,22 @@ const fmt = v => v === null
 const THRESHOLD = 0.01;
 const hasDiff   = d => d !== null && Math.abs(d) > THRESHOLD;
 const diffStyle = d => hasDiff(d) ? 'color:var(--color-danger);font-weight:600;' : '';
+
+// Construye mapa código numérico → clave de columna a partir de los headers del Tabulado.
+// Soporta formato "1003-SUELDO" (extrae "1003") o nombre numérico exacto "1003".
+function buildColByCode(sampleRow) {
+  const colByCode = {};
+  for (const col of Object.keys(sampleRow)) {
+    const s = String(col).trim();
+    const m = s.match(/^(\d+)[-_]/);
+    if (m) {
+      if (!colByCode[m[1]]) colByCode[m[1]] = col;
+    } else if (/^\d+$/.test(s)) {
+      if (!colByCode[s]) colByCode[s] = col;
+    }
+  }
+  return colByCode;
+}
 
 // ── summarize ─────────────────────────────────────────────────────────────────
 
@@ -83,16 +133,27 @@ export function runRendVsTabu(rendRows, tabRows, mapping) {
   const rm = mapping.rend;
   const tm = mapping.tab;
 
-  // Columnas del Tabulado para cada importe
-  const tabCols = {};
-  for (const c of COLS) {
-    tabCols[c.key] = c.tabKey ? (tm[c.tabKey] || null) : null;
+  // Construir mapa código → columna desde los headers del Tabulado
+  const sampleRow  = tabRows[0] || {};
+  const colByCode  = buildColByCode(sampleRow);
+
+  // Para cada categoría, resolver qué columnas del Tabulado corresponden
+  const catCols = {};
+  for (const [catKey, entries] of Object.entries(CONCEPT_CONFIG)) {
+    catCols[catKey] = entries
+      .map(e => ({ col: colByCode[e.code] || null, sign: e.sign, code: e.code }))
+      .filter(e => e.col !== null);
   }
-  const tabCcCodeCol  = tm.idCCColumn  || null;
-  const tabCcNameCol  = tm.ccColumn    || null;
-  const tabEmpresaCol = tm.tabRvtEmpresaColumn  || null;
-  const tabRet9200Col = tm.tabRvtRet9200Column  || null;
-  const tabRet9205Col = tm.tabRvtRet9205Column  || null;
+
+  const retirosColsFound = catCols.retiros.length > 0;
+
+  // Columna EMPRESA para filtro de retiros (busca header exactamente igual a 'EMPRESA')
+  const empresaCol = Object.keys(sampleRow)
+    .find(k => String(k).trim().toUpperCase() === 'EMPRESA') || null;
+
+  // Columnas CC del Tabulado (del mapping estándar del tabulado)
+  const tabCcCodeCol = tm.idCCColumn || null;
+  const tabCcNameCol = tm.ccColumn   || null;
 
   // ── Agrupar Tabulado por CC ────────────────────────────────────────────────
   const tabGroups = new Map();  // mapKey → bucket de sumas
@@ -108,24 +169,32 @@ export function runRendVsTabu(rendRows, tabRows, mapping) {
     if (!tabGroups.has(mapKey)) {
       tabGroups.set(mapKey, {
         codeKey, nameKey,
-        precio: 0, estimulo: 0, retiros: 0, cargas: 0, provMes: 0, provCcss: 0, total: 0,
+        precio: 0, estimulo: 0, retiros: 0, cargas: 0, provMes: 0, provCcss: 0,
       });
     }
     const g = tabGroups.get(mapKey);
-    g.precio   += toNum(row[tabCols.precio])   ?? 0;
-    g.estimulo += toNum(row[tabCols.estimulo]) ?? 0;
-    g.cargas   += toNum(row[tabCols.cargas])   ?? 0;
-    g.provMes  += toNum(row[tabCols.provMes])  ?? 0;
-    g.provCcss += toNum(row[tabCols.provCcss]) ?? 0;
-    g.total    += toNum(row[tabCols.total])    ?? 0;
 
-    // RETIROS: conceptos 9200 + 9205, solo filas con EMPRESA = 03
-    if (tabEmpresaCol) {
-      const emp = norm(row[tabEmpresaCol]);
-      if (emp === '03' || emp === '3') {
-        g.retiros += (toNum(row[tabRet9200Col]) ?? 0) + (toNum(row[tabRet9205Col]) ?? 0);
+    // Sumar conceptos para cada categoría (excepto retiros)
+    for (const catKey of ['precio', 'estimulo', 'cargas', 'provMes', 'provCcss']) {
+      for (const { col, sign } of catCols[catKey]) {
+        g[catKey] += (toNum(row[col]) ?? 0) * sign;
       }
     }
+
+    // RETIROS: solo filas donde EMPRESA = 03
+    if (empresaCol) {
+      const emp = norm(row[empresaCol]);
+      if (emp === '03' || emp === '3') {
+        for (const { col, sign } of catCols.retiros) {
+          g.retiros += (toNum(row[col]) ?? 0) * sign;
+        }
+      }
+    }
+  }
+
+  // COSTO TOTAL por grupo = suma de todas las categorías
+  for (const g of tabGroups.values()) {
+    g.total = g.precio + g.estimulo + g.retiros + g.cargas + g.provMes + g.provCcss;
   }
 
   // Índice secundario por nombre (fallback en el matching)
@@ -194,13 +263,13 @@ export function runRendVsTabu(rendRows, tabRows, mapping) {
     difTotal:    rows.filter(r => hasDiff(r.dTotal)).length,
   };
 
-  return { summary, rows };
+  return { summary, rows, meta: { retirosColsFound } };
 }
 
 // ── renderRendVsTabuResults ───────────────────────────────────────────────────
 
 export function renderRendVsTabuResults(results, container) {
-  const { rows } = results;
+  const { rows, meta } = results;
 
   if (rows.length === 0) {
     container.innerHTML = `<p class="text-muted" style="padding:var(--sp-4);">Sin datos.</p>`;
@@ -260,11 +329,9 @@ export function renderRendVsTabuResults(results, container) {
   }).join('');
 
   // ── Nota sobre RETIROS ─────────────────────────────────────────────────────
-  const hasRetirosConfig = rows.some(r => r.tRetiros !== null && r.tRetiros !== 0);
-  const retirosNote = !hasRetirosConfig
+  const retirosNote = !meta?.retirosColsFound
     ? `<p class="text-muted" style="font-size:var(--text-sm);margin:var(--sp-2) var(--sp-3) 0;">
-        ⓘ RETIROS (Tab) = 0 porque ninguna fila del Tabulado tiene EMPRESA = 03
-        o las columnas 9200/9205 no están configuradas.
+        ⓘ RETIROS (Tab) = 0 porque el Tabulado no tiene columnas con código 9200 o 9205.
        </p>`
     : '';
 
