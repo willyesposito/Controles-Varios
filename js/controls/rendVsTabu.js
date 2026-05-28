@@ -9,7 +9,7 @@
 // sign: +1 suma, -1 resta
 // Fuente: pestaña "Detalles de conceptos" del archivo de referencia.
 
-const CONCEPT_CONFIG = {
+export const DEFAULT_CONCEPT_CONFIG = {
   precio: [
     { code: '1153', sign: 1 }, { code: '2000', sign: 1 }, { code: '2996', sign: 1 },
     { code: '3025', sign: 1 }, { code: '3999', sign: 1 }, { code: '4897', sign: 1 },
@@ -133,13 +133,16 @@ export function runRendVsTabu(rendRows, tabRows, mapping) {
   const rm = mapping.rend;
   const tm = mapping.tab;
 
+  // Usar agrupación personalizada si fue configurada, si no los defaults
+  const conceptConfig = mapping.conceptGrouping || DEFAULT_CONCEPT_CONFIG;
+
   // Construir mapa código → columna desde los headers del Tabulado
   const sampleRow  = tabRows[0] || {};
   const colByCode  = buildColByCode(sampleRow);
 
   // Para cada categoría, resolver qué columnas del Tabulado corresponden
   const catCols = {};
-  for (const [catKey, entries] of Object.entries(CONCEPT_CONFIG)) {
+  for (const [catKey, entries] of Object.entries(conceptConfig)) {
     catCols[catKey] = entries
       .map(e => ({ col: colByCode[e.code] || null, sign: e.sign, code: e.code }))
       .filter(e => e.col !== null);
@@ -263,7 +266,7 @@ export function runRendVsTabu(rendRows, tabRows, mapping) {
     difTotal:    rows.filter(r => hasDiff(r.dTotal)).length,
   };
 
-  return { summary, rows, meta: { retirosColsFound } };
+  return { summary, rows, meta: { retirosColsFound, conceptConfig, colByCode } };
 }
 
 // ── renderRendVsTabuResults ───────────────────────────────────────────────────
@@ -290,9 +293,31 @@ export function renderRendVsTabuResults(results, container) {
   }
 
   // ── Encabezados ───────────────────────────────────────────────────────────
-  const hdr1 = COLS.map(c =>
-    `<th colspan="3" style="text-align:center;background:${c.hdr};">${esc(c.label)}</th>`
-  ).join('');
+  const { conceptConfig: cc, colByCode: cbc } = results.meta || {};
+  const hdr1 = COLS.map(c => {
+    if (c.key === 'total' || !cc || !cbc) {
+      return `<th colspan="3" style="text-align:center;background:${c.hdr};">${esc(c.label)}</th>`;
+    }
+    const entries = cc[c.key] || [];
+    const conceptList = entries
+      .filter(e => cbc[e.code])
+      .map(e => {
+        const sign = e.sign === -1 ? '−' : '+';
+        return `<span style="display:inline-block;margin:1px 3px;white-space:nowrap;">${sign} ${esc(cbc[e.code])}</span>`;
+      })
+      .join('');
+    const missing = entries.filter(e => !cbc[e.code]);
+    const missingNote = missing.length
+      ? `<span style="display:block;margin-top:2px;color:var(--color-warning);font-size:10px;">⚠ ${missing.length} código${missing.length > 1 ? 's' : ''} no hallado${missing.length > 1 ? 's' : ''} en Tabulado</span>`
+      : '';
+    const conceptDetail = entries.length
+      ? `<details style="font-size:10px;font-weight:400;text-align:left;margin-top:2px;">
+           <summary style="cursor:pointer;list-style:none;text-align:center;color:inherit;opacity:0.75;">▾ ${entries.length} concepto${entries.length !== 1 ? 's' : ''}</summary>
+           <div style="padding:3px 0;line-height:1.6;">${conceptList}${missingNote}</div>
+         </details>`
+      : `<div style="font-size:10px;font-weight:400;opacity:0.6;">(sin conceptos)</div>`;
+    return `<th colspan="3" style="text-align:center;background:${c.hdr};">${esc(c.label)}${conceptDetail}</th>`;
+  }).join('');
 
   const hdr2 = COLS.map(c => `
     <th style="text-align:right;background:${c.hdr};">Rend</th>

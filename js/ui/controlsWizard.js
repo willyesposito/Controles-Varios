@@ -26,8 +26,9 @@ import { autoDetectBrutosMapping } from '../parsers/brutosParser.js';
 import { autoDetectGsPersMapping } from '../parsers/gsPersParser.js';
 import { autoDetectNrMapping }          from '../parsers/nrParser.js';
 import { autoDetectRendimientoMapping } from '../parsers/rendimientoParser.js';
-import { buildParserMapping }      from '../parsers/conceptMatcher.js';
+import { buildParserMapping }           from '../parsers/conceptMatcher.js';
 import { currentPeriod, periodOptions } from '../utils/dates.js';
+import { renderConceptGroupingEditor }  from './rendVsTabuConceptEditor.js';
 
 // Mapa: fileType → función de auto-detección de columnas
 const AUTO_DETECT = {
@@ -57,9 +58,10 @@ export async function renderControlsWizard(root, clientId) {
     return;
   }
 
-  const [savedBrutosConfig, savedCatalog] = await Promise.all([
+  const [savedBrutosConfig, savedCatalog, savedRendGrouping] = await Promise.all([
     getFileProfile(Number(clientId), 'brutos_tab_config'),
     getClientCatalog(Number(clientId)),
+    getFileProfile(Number(clientId), 'rendvstabu_concept_grouping'),
   ]);
 
   const state = {
@@ -76,6 +78,7 @@ export async function renderControlsWizard(root, clientId) {
     // (se persiste bajo la clave 'brutos_tab_config' por compatibilidad histórica).
     tabExtraConfig:            savedBrutosConfig?.mapping || {},
     tabExtraConfigAutoDetected: false,
+    rendVsTabuGrouping:        savedRendGrouping?.mapping || null,
     expandedGroups:            new Set(),  // grupos de controles cuyo panel de modos está abierto
   };
 
@@ -600,11 +603,24 @@ function renderStepControls(container, state, root) {
   }
 
   // Panel de configuración de columnas del Tabulado para Brutos, GS Pers, NR y/o RendvsTabu
-  const hasBrutos = state.selectedControls.some(id => BRUTOS_IDS.includes(id));
-  const hasGsPers = state.selectedControls.some(id => GS_PERS_IDS.includes(id));
-  const hasNr     = state.selectedControls.some(id => NR_IDS.includes(id));
+  const hasBrutos    = state.selectedControls.some(id => BRUTOS_IDS.includes(id));
+  const hasGsPers    = state.selectedControls.some(id => GS_PERS_IDS.includes(id));
+  const hasNr        = state.selectedControls.some(id => NR_IDS.includes(id));
+  const hasRendVsTabu = state.selectedControls.includes('rend_vs_tabu');
+
   if (hasBrutos || hasGsPers || hasNr) {
     renderTabExtraConfig(filesArea, state, root, { hasBrutos, hasGsPers, hasNr });
+  }
+
+  if (hasRendVsTabu && state.tab?.parsedRows?.length > 0) {
+    const editorDiv = document.createElement('div');
+    filesArea.appendChild(editorDiv);
+    renderConceptGroupingEditor(
+      editorDiv,
+      state.tab.parsedRows,
+      state.rendVsTabuGrouping,
+      (newGrouping) => { state.rendVsTabuGrouping = newGrouping; }
+    );
   }
 }
 
@@ -912,6 +928,11 @@ async function executeControls(state, statusEl) {
       await saveFileProfile(state.clientId, 'brutos_tab_config', state.tabExtraConfig);
     }
 
+    // 3b. Guardar agrupación de conceptos RendvsTabu si fue personalizada
+    if (state.selectedControls.includes('rend_vs_tabu') && state.rendVsTabuGrouping) {
+      await saveFileProfile(state.clientId, 'rendvstabu_concept_grouping', state.rendVsTabuGrouping);
+    }
+
     // 4. Por cada control: guardar archivos adicionales y ejecutar lógica
     for (const controlId of state.selectedControls) {
       const ctrl = CONTROL_REGISTRY[controlId];
@@ -933,6 +954,9 @@ async function executeControls(state, statusEl) {
         tab:    { ...(tab.mapping || {}), ...state.tabExtraConfig },
         period: state.period,
       };
+      if (controlId === 'rend_vs_tabu' && state.rendVsTabuGrouping) {
+        mapping.conceptGrouping = state.rendVsTabuGrouping;
+      }
       for (const fileSpec of ctrl.additionalFiles) {
         const fileData = state.controlFiles[controlId]?.[fileSpec.key];
         if (fileData) mapping[fileSpec.key] = fileData.mapping || {};
