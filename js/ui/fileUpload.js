@@ -9,6 +9,7 @@ import { parseCatEmpleados } from '../parsers/catEmpleados.js';
 import { parseBrutos } from '../parsers/brutosParser.js';
 import { parseGsPers } from '../parsers/gsPersParser.js';
 import { parseNr }     from '../parsers/nrParser.js';
+import { parseRendimiento } from '../parsers/rendimientoParser.js';
 import { parseConceptCatalog } from '../parsers/conceptCatalog.js';
 import { getFileProfile, saveFileProfile } from '../db.js';
 
@@ -81,6 +82,17 @@ const FIELD_DEFS = {
     { key: 'asigPasColumn',         label: 'Columna de ASIG_PAS',               required: false },
     { key: 'reintGuardColumn',      label: 'Columna de REINT_GUARD',             required: false },
     { key: 'incrementoStColumn',    label: 'Columna de INCREMENTO_ST',           required: false },
+  ],
+  rend_file: [
+    { key: 'ccCodeColumn',     label: 'Columna de código CC (1ª col., sin encabezado)', required: false },
+    { key: 'ccNameColumn',     label: 'Columna de Centro de Costo',                     required: true  },
+    { key: 'precioColumn',     label: 'Columna de PRECIO',                               required: true  },
+    { key: 'estimuloColumn',   label: 'Columna de ASIG. ESTÍMULO',                      required: false },
+    { key: 'retirosColumn',    label: 'Columna de RETIROS',                              required: false },
+    { key: 'cargasColumn',     label: 'Columna de CARGAS SOCIALES',                     required: false },
+    { key: 'provMesColumn',    label: 'Columna de PROVISIÓN MES',                       required: false },
+    { key: 'provCcssColumn',   label: 'Columna de PROV. CCSS MES',                      required: false },
+    { key: 'costoTotalColumn', label: 'Columna de COSTO TOTAL',                         required: false },
   ],
   // Catálogo de conceptos: formato fijo, no requiere mapping de columnas
   concept_catalog: [],
@@ -318,7 +330,7 @@ function renderAlreadyLoaded(container, existingData, onReplace, onComplete) {
       + (parseMetadata?.noRemu       ? ` · ${parseMetadata.noRemu} no_remu`          : '')
       + (parseMetadata?.aporte       ? ` · ${parseMetadata.aporte} aportes`          : '')
       + (parseMetadata?.contribucion ? ` · ${parseMetadata.contribucion} contribuciones` : '');
-  } else if (fileType === 'tab_control' || fileType === 'brutos_file' || fileType === 'gs_pers_file' || fileType === 'nr_file') {
+  } else if (fileType === 'tab_control' || fileType === 'brutos_file' || fileType === 'gs_pers_file' || fileType === 'nr_file' || fileType === 'rend_file') {
     metaLine = `${parseMetadata?.totalRows ?? 0} registros`;
   } else {
     metaLine = `${parseMetadata?.uniqueLegajos ?? 0} legajos · ${parseMetadata?.detectedConcepts?.length ?? 0} conceptos`;
@@ -560,6 +572,7 @@ function parseFile(arrayBuffer, fileType, mapping) {
     case 'brutos_file':                 return parseBrutos(arrayBuffer, mapping);
     case 'gs_pers_file':                return parseGsPers(arrayBuffer, mapping);
     case 'nr_file':                     return parseNr(arrayBuffer, mapping);
+    case 'rend_file':                   return parseRendimiento(arrayBuffer, mapping);
     case 'concept_catalog':             return parseConceptCatalog(arrayBuffer);
     default: throw new Error(`Tipo de archivo desconocido: "${fileType}".`);
   }
@@ -575,6 +588,7 @@ function fileTypeLabel(fileType) {
     brutos_file:                 'Reporte de Brutos',
     gs_pers_file:                'Reporte de GS Pers (Gastos Personales y Cochera)',
     nr_file:                     'Reporte de NR (No Remunerativos)',
+    rend_file:                   'Reporte de Rendimiento',
     concept_catalog:             'Catálogo de Conceptos',
   }[fileType] || fileType;
 }
