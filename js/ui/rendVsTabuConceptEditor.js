@@ -5,7 +5,6 @@ import { DEFAULT_CONCEPT_CONFIG } from '../controls/rendVsTabu.js';
 const CAT_META = [
   { key: 'precio',   label: 'PRECIO',          hdr: 'rgba(0,112,192,0.22)',  bg: 'rgba(0,112,192,0.08)' },
   { key: 'estimulo', label: 'ASIG. ESTÍMULO',  hdr: 'rgba(0,156,64,0.22)',   bg: 'rgba(0,156,64,0.08)' },
-  { key: 'retiros',  label: 'RETIROS',         hdr: 'rgba(112,48,160,0.22)', bg: 'rgba(112,48,160,0.08)' },
   { key: 'cargas',   label: 'CARGAS SS',       hdr: 'rgba(192,0,0,0.22)',    bg: 'rgba(192,0,0,0.08)' },
   { key: 'provMes',  label: 'PROV. MES',       hdr: 'rgba(0,176,240,0.22)',  bg: 'rgba(0,176,240,0.08)' },
   { key: 'provCcss', label: 'PROV. CCSS MES',  hdr: 'rgba(0,70,127,0.22)',   bg: 'rgba(0,70,127,0.08)' },

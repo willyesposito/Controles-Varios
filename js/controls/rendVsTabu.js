@@ -1,7 +1,7 @@
 // rendVsTabu.js — Control 5: Rendimiento vs Tabulado (RendvsTabu)
 //
 // Compara el Reporte de Rendimiento de M4 (por CC) contra el Tabulado.
-// Calcula PRECIO, ASIG. ESTÍMULO, CARGAS SS, PROV. MES, PROV. CCSS MES y RETIROS
+// Calcula PRECIO, ASIG. ESTÍMULO, CARGAS SS, PROV. MES, PROV. CCSS MES
 // directamente de las columnas individuales del Tabulado (ej: "1003-SUELDO"),
 // usando los conceptos definidos en "Detalles de conceptos".
 
@@ -34,29 +34,23 @@ export const DEFAULT_CONCEPT_CONFIG = {
     { code: '3672', sign:  1 }, { code: '3676', sign:  1 }, { code: '3572', sign:  1 },
     { code: '3576', sign: -1 }, { code: '7292', sign:  1 }, { code: '7289', sign: -1 },
   ],
-  // Solo para filas donde EMPRESA = 03
-  retiros: [
-    { code: '9200', sign: 1 }, { code: '9205', sign: 1 },
-  ],
 };
 
 // ── Definición de columnas de comparación ────────────────────────────────────
 
 const COLS = [
   { key: 'precio',   label: 'PRECIO',          rKey: 'rPrecio',   tKey: 'tPrecio',   dKey: 'dPrecio',
-    hdr: 'rgba(0,112,192,0.22)',  bg: 'rgba(0,112,192,0.08)' },
+    hdr: 'rgba(0,112,192,0.22)',  bg: 'rgba(0,112,192,0.08)',  xlHdr: 'FFCCE0F5', xlBg: 'FFF0F6FD' },
   { key: 'estimulo', label: 'ASIG. ESTÍMULO',  rKey: 'rEstimulo', tKey: 'tEstimulo', dKey: 'dEstimulo',
-    hdr: 'rgba(0,156,64,0.22)',   bg: 'rgba(0,156,64,0.08)' },
-  { key: 'retiros',  label: 'RETIROS',         rKey: 'rRetiros',  tKey: 'tRetiros',  dKey: 'dRetiros',
-    hdr: 'rgba(112,48,160,0.22)', bg: 'rgba(112,48,160,0.08)' },
+    hdr: 'rgba(0,156,64,0.22)',   bg: 'rgba(0,156,64,0.08)',   xlHdr: 'FFC9EDD8', xlBg: 'FFEDF9F2' },
   { key: 'cargas',   label: 'CARGAS SS',       rKey: 'rCargas',   tKey: 'tCargas',   dKey: 'dCargas',
-    hdr: 'rgba(192,0,0,0.22)',    bg: 'rgba(192,0,0,0.08)' },
+    hdr: 'rgba(192,0,0,0.22)',    bg: 'rgba(192,0,0,0.08)',    xlHdr: 'FFF5CCCC', xlBg: 'FFFCEAEA' },
   { key: 'provMes',  label: 'PROV. MES',       rKey: 'rProvMes',  tKey: 'tProvMes',  dKey: 'dProvMes',
-    hdr: 'rgba(0,176,240,0.22)',  bg: 'rgba(0,176,240,0.08)' },
+    hdr: 'rgba(0,176,240,0.22)',  bg: 'rgba(0,176,240,0.08)',  xlHdr: 'FFC7EDF9', xlBg: 'FFEAF7FD' },
   { key: 'provCcss', label: 'PROV. CCSS MES',  rKey: 'rProvCcss', tKey: 'tProvCcss', dKey: 'dProvCcss',
-    hdr: 'rgba(0,70,127,0.22)',   bg: 'rgba(0,70,127,0.08)' },
+    hdr: 'rgba(0,70,127,0.22)',   bg: 'rgba(0,70,127,0.08)',   xlHdr: 'FFCCDDED', xlBg: 'FFEAF2F8' },
   { key: 'total',    label: 'COSTO TOTAL',     rKey: 'rTotal',    tKey: 'tTotal',    dKey: 'dTotal',
-    hdr: 'rgba(64,64,64,0.18)',   bg: 'rgba(64,64,64,0.07)' },
+    hdr: 'rgba(64,64,64,0.18)',   bg: 'rgba(64,64,64,0.07)',   xlHdr: 'FFDCDCDC', xlBg: 'FFF2F2F2' },
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -148,12 +142,6 @@ export function runRendVsTabu(rendRows, tabRows, mapping) {
       .filter(e => e.col !== null);
   }
 
-  const retirosColsFound = catCols.retiros.length > 0;
-
-  // Columna EMPRESA para filtro de retiros (busca header exactamente igual a 'EMPRESA')
-  const empresaCol = Object.keys(sampleRow)
-    .find(k => String(k).trim().toUpperCase() === 'EMPRESA') || null;
-
   // Columnas CC del Tabulado (del mapping estándar del tabulado)
   const tabCcCodeCol = tm.idCCColumn || null;
   const tabCcNameCol = tm.ccColumn   || null;
@@ -172,32 +160,21 @@ export function runRendVsTabu(rendRows, tabRows, mapping) {
     if (!tabGroups.has(mapKey)) {
       tabGroups.set(mapKey, {
         codeKey, nameKey,
-        precio: 0, estimulo: 0, retiros: 0, cargas: 0, provMes: 0, provCcss: 0,
+        precio: 0, estimulo: 0, cargas: 0, provMes: 0, provCcss: 0,
       });
     }
     const g = tabGroups.get(mapKey);
 
-    // Sumar conceptos para cada categoría (excepto retiros)
     for (const catKey of ['precio', 'estimulo', 'cargas', 'provMes', 'provCcss']) {
-      for (const { col, sign } of catCols[catKey]) {
+      for (const { col, sign } of (catCols[catKey] || [])) {
         g[catKey] += (toNum(row[col]) ?? 0) * sign;
-      }
-    }
-
-    // RETIROS: solo filas donde EMPRESA = 03
-    if (empresaCol) {
-      const emp = norm(row[empresaCol]);
-      if (emp === '03' || emp === '3') {
-        for (const { col, sign } of catCols.retiros) {
-          g.retiros += (toNum(row[col]) ?? 0) * sign;
-        }
       }
     }
   }
 
-  // COSTO TOTAL por grupo = suma de todas las categorías
+  // COSTO TOTAL por grupo = suma de categorías (sin retiros)
   for (const g of tabGroups.values()) {
-    g.total = g.precio + g.estimulo + g.retiros + g.cargas + g.provMes + g.provCcss;
+    g.total = g.precio + g.estimulo + g.cargas + g.provMes + g.provCcss;
   }
 
   // Índice secundario por nombre (fallback en el matching)
@@ -217,11 +194,10 @@ export function runRendVsTabu(rendRows, tabRows, mapping) {
 
     const rPrecio   = toNum(rRow[rm.precioColumn]);
     const rEstimulo = toNum(rRow[rm.estimuloColumn]);
-    const rRetiros  = toNum(rRow[rm.retirosColumn]);
     const rCargas   = toNum(rRow[rm.cargasColumn]);
     const rProvMes  = toNum(rRow[rm.provMesColumn]);
     const rProvCcss = toNum(rRow[rm.provCcssColumn]);
-    const rTotal    = toNum(rRow[rm.costoTotalColumn]);
+    const rTotal    = (rPrecio ?? 0) + (rEstimulo ?? 0) + (rCargas ?? 0) + (rProvMes ?? 0) + (rProvCcss ?? 0);
 
     // Matching: código primero, nombre como fallback
     const codeKey = normCCCode(ccCode);
@@ -234,17 +210,15 @@ export function runRendVsTabu(rendRows, tabRows, mapping) {
 
     rows.push({
       ccCode, ccName,
-      rPrecio, rEstimulo, rRetiros, rCargas, rProvMes, rProvCcss, rTotal,
+      rPrecio, rEstimulo, rCargas, rProvMes, rProvCcss, rTotal,
       tPrecio:   tab ? tab.precio   : null,
       tEstimulo: tab ? tab.estimulo : null,
-      tRetiros:  tab ? tab.retiros  : null,
       tCargas:   tab ? tab.cargas   : null,
       tProvMes:  tab ? tab.provMes  : null,
       tProvCcss: tab ? tab.provCcss : null,
       tTotal:    tab ? tab.total    : null,
       dPrecio:   diff(tab?.precio,   rPrecio),
       dEstimulo: diff(tab?.estimulo, rEstimulo),
-      dRetiros:  diff(tab?.retiros,  rRetiros),
       dCargas:   diff(tab?.cargas,   rCargas),
       dProvMes:  diff(tab?.provMes,  rProvMes),
       dProvCcss: diff(tab?.provCcss, rProvCcss),
@@ -259,14 +233,13 @@ export function runRendVsTabu(rendRows, tabRows, mapping) {
     sinTabData:  rows.filter(r => r.sinTabData).length,
     difPrecio:   rows.filter(r => hasDiff(r.dPrecio)).length,
     difEstimulo: rows.filter(r => hasDiff(r.dEstimulo)).length,
-    difRetiros:  rows.filter(r => hasDiff(r.dRetiros)).length,
     difCargas:   rows.filter(r => hasDiff(r.dCargas)).length,
     difProvMes:  rows.filter(r => hasDiff(r.dProvMes)).length,
     difProvCcss: rows.filter(r => hasDiff(r.dProvCcss)).length,
     difTotal:    rows.filter(r => hasDiff(r.dTotal)).length,
   };
 
-  return { summary, rows, meta: { retirosColsFound, conceptConfig, colByCode } };
+  return { summary, rows, meta: { conceptConfig, colByCode } };
 }
 
 // ── renderRendVsTabuResults ───────────────────────────────────────────────────
@@ -353,12 +326,9 @@ export function renderRendVsTabuResults(results, container) {
     `;
   }).join('');
 
-  // ── Nota sobre RETIROS ─────────────────────────────────────────────────────
-  const retirosNote = !meta?.retirosColsFound
-    ? `<p class="text-muted" style="font-size:var(--text-sm);margin:var(--sp-2) var(--sp-3) 0;">
-        ⓘ RETIROS (Tab) = 0 porque el Tabulado no tiene columnas con código 9200 o 9205.
-       </p>`
-    : '';
+  const exportBtn = document.createElement('div');
+  exportBtn.style.cssText = 'display:flex;justify-content:flex-end;margin-bottom:var(--sp-2);';
+  exportBtn.innerHTML = `<button type="button" id="js-rtv-export" class="btn btn--ghost btn--sm">⬇ Exportar a Excel</button>`;
 
   const tableWrap = document.createElement('div');
   tableWrap.style.overflowX = 'auto';
@@ -382,9 +352,184 @@ export function renderRendVsTabuResults(results, container) {
         </tr>
       </tbody>
     </table>
-    ${retirosNote}
   `;
 
   container.innerHTML = '';
+  container.appendChild(exportBtn);
   container.appendChild(tableWrap);
+
+  container.querySelector('#js-rtv-export')?.addEventListener('click', () => exportRendVsTabuToXlsx(results));
+}
+
+// ── Excel export ──────────────────────────────────────────────────────────────
+
+async function loadExcelJS() {
+  if (!window.ExcelJS) {
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js';
+      s.onload = resolve;
+      s.onerror = () => reject(new Error('No se pudo cargar ExcelJS. Verificá la conexión a internet.'));
+      document.head.appendChild(s);
+    });
+  }
+}
+
+async function downloadXlsx(wb, fileName) {
+  const buf  = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function dateSuffix() {
+  return new Date().toISOString().slice(0, 10).replace(/-/g, '');
+}
+
+async function exportRendVsTabuToXlsx(results) {
+  await loadExcelJS();
+  const { rows } = results;
+
+  const wb = new window.ExcelJS.Workbook();
+  wb.creator = 'H&A Controles Nómina';
+  wb.created = new Date();
+
+  const ws = wb.addWorksheet('Rend vs Tabulado');
+
+  // Anchos: CC, Nombre, luego 3 cols por categoría (Rend, Tab, CTRL)
+  ws.columns = [
+    { width: 10 }, { width: 30 },
+    ...COLS.flatMap(() => [{ width: 18 }, { width: 18 }, { width: 18 }]),
+  ];
+
+  const solidFill = argb => ({ type: 'pattern', pattern: 'solid', fgColor: { argb } });
+  const base = { name: 'Calibri', size: 10 };
+  const bold = { ...base, bold: true };
+  const numFmt = '#,##0.00';
+  const RED = 'FFCC0000';
+  const GRAY_HDR = 'FFE0E0E0';
+
+  // ── Fila 1: nombres de categorías (merged) ────────────────────────────────
+  const hdr1Values = ['CC', 'Centro de Costo', ...COLS.flatMap(c => [c.label, null, null])];
+  const r1 = ws.addRow(hdr1Values);
+  r1.height = 22;
+
+  // Merge CC y Nombre (rowspan=2 equivalente: se maneja con merge vertical)
+  ws.mergeCells('A1:A2');
+  ws.mergeCells('B1:B2');
+
+  COLS.forEach((c, i) => {
+    const startCol = 3 + i * 3;
+    const endCol   = startCol + 2;
+    ws.mergeCells(1, startCol, 1, endCol);
+    const cell = r1.getCell(startCol);
+    cell.value = c.label;
+    cell.font      = { ...bold };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.fill      = solidFill(c.xlHdr);
+    cell.border    = { bottom: { style: 'thin', color: { argb: 'FFB0B0B0' } } };
+  });
+
+  // Estilar CC y Nombre en fila 1
+  ['A1', 'B1'].forEach(addr => {
+    const cell = ws.getCell(addr);
+    cell.font      = { ...bold };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.fill      = solidFill(GRAY_HDR);
+    cell.border    = { bottom: { style: 'thin', color: { argb: 'FFB0B0B0' } } };
+  });
+
+  // ── Fila 2: sub-encabezados Rend / Tab / CTRL ─────────────────────────────
+  const hdr2Values = ['', '', ...COLS.flatMap(() => ['Rend', 'Tab', 'CTRL\nTab−Rend'])];
+  const r2 = ws.addRow(hdr2Values);
+  r2.height = 28;
+
+  COLS.forEach((c, i) => {
+    const startCol = 3 + i * 3;
+    for (let col = startCol; col <= startCol + 2; col++) {
+      const cell = r2.getCell(col);
+      cell.font      = col === startCol + 2 ? { ...bold } : { ...base };
+      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+      cell.fill      = solidFill(c.xlHdr);
+      cell.border    = { bottom: { style: 'medium', color: { argb: 'FFB0B0B0' } } };
+    }
+  });
+  r2.getCell(1).fill = solidFill(GRAY_HDR);
+  r2.getCell(2).fill = solidFill(GRAY_HDR);
+
+  ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 2 }];
+
+  // ── Filas de datos ─────────────────────────────────────────────────────────
+  for (const r of rows) {
+    const values = [
+      r.ccCode, r.ccName,
+      ...COLS.flatMap(c => [r[c.rKey], r[c.tKey], r[c.dKey]]),
+    ];
+    const dr = ws.addRow(values);
+    dr.getCell(1).font = { ...base };
+    dr.getCell(2).font = { ...base };
+
+    COLS.forEach((c, i) => {
+      const startCol = 3 + i * 3;
+      for (let col = startCol; col <= startCol + 2; col++) {
+        const cell = dr.getCell(col);
+        cell.numFmt    = numFmt;
+        cell.alignment = { horizontal: 'right', vertical: 'middle' };
+        cell.fill      = solidFill(c.xlBg);
+        cell.font      = { ...base };
+      }
+      // CTRL en rojo si hay diferencia
+      const dCell = dr.getCell(startCol + 2);
+      const dVal  = r[c.dKey];
+      if (dVal !== null && Math.abs(dVal) > 0.01) {
+        dCell.font = { ...bold, color: { argb: RED } };
+      }
+    });
+
+    if (r.sinTabData) dr.eachCell(cell => { cell.font = { ...cell.font, color: { argb: 'FF999999' } }; });
+  }
+
+  // ── Fila de totales ────────────────────────────────────────────────────────
+  const totals = {};
+  for (const c of COLS) { totals[c.rKey] = 0; totals[c.tKey] = 0; }
+  for (const r of rows) {
+    for (const c of COLS) {
+      totals[c.rKey] += r[c.rKey] ?? 0;
+      totals[c.tKey] += r[c.tKey] ?? 0;
+    }
+  }
+
+  const totValues = [
+    'TOTAL GENERAL', '',
+    ...COLS.flatMap(c => {
+      const d = totals[c.tKey] - totals[c.rKey];
+      return [totals[c.rKey], totals[c.tKey], d];
+    }),
+  ];
+  const tr = ws.addRow(totValues);
+  tr.getCell(1).font = { ...bold };
+  tr.getCell(2).font = { ...bold };
+
+  COLS.forEach((c, i) => {
+    const startCol = 3 + i * 3;
+    for (let col = startCol; col <= startCol + 2; col++) {
+      const cell = tr.getCell(col);
+      cell.numFmt    = numFmt;
+      cell.alignment = { horizontal: 'right', vertical: 'middle' };
+      cell.fill      = solidFill(c.xlHdr);
+      cell.font      = { ...bold };
+      cell.border    = { top: { style: 'medium', color: { argb: 'FFB0B0B0' } } };
+    }
+    const dCell = tr.getCell(startCol + 2);
+    const d = totals[c.tKey] - totals[c.rKey];
+    if (Math.abs(d) > 0.01) dCell.font = { ...bold, color: { argb: RED } };
+  });
+
+  await downloadXlsx(wb, `RendvsTabu_${dateSuffix()}.xlsx`);
 }
