@@ -245,12 +245,32 @@ function renderDropZone(container, fileType, onFile) {
     const file = e.target.files[0];
     if (file) handleFile(file, onFile, container, fileType);
   });
+
+  // Drop zone interno: stopPropagation para no duplicar con el handler del container
   dropZone.addEventListener('dragover', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    dropZone.classList.add('file-drop--dragover');
+  });
+  dropZone.addEventListener('dragleave', (e) => {
+    e.stopPropagation();
+    dropZone.classList.remove('file-drop--dragover');
+  });
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    dropZone.classList.remove('file-drop--dragover');
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file, onFile, container, fileType);
+  });
+
+  // Expandir el área de drop al contenedor completo (captura drops fuera del ícono)
+  container.addEventListener('dragover', (e) => {
     e.preventDefault();
     dropZone.classList.add('file-drop--dragover');
   });
-  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('file-drop--dragover'));
-  dropZone.addEventListener('drop', (e) => {
+  container.addEventListener('dragleave', (e) => {
+    if (!container.contains(e.relatedTarget)) dropZone.classList.remove('file-drop--dragover');
+  });
+  container.addEventListener('drop', (e) => {
     e.preventDefault();
     dropZone.classList.remove('file-drop--dragover');
     const file = e.dataTransfer.files[0];
@@ -546,6 +566,11 @@ function renderMappingForm(container, { headers, preview, fileType, savedMapping
 
   container.querySelector('#js-cancel-mapping')
     .addEventListener('click', onCancel);
+
+  // Esc para cancelar el formulario de mapeo
+  container.querySelector('#js-mapping-form').addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') onCancel();
+  });
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

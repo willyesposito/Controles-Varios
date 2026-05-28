@@ -206,6 +206,7 @@ export function renderConceptGroupingEditor(container, tabRows, currentGrouping,
     });
 
     container.querySelector('#js-rtv-restore')?.addEventListener('click', () => {
+      if (!confirm('¿Restaurar la agrupación predeterminada? Se perderán los cambios actuales.')) return;
       grouping = deepClone(DEFAULT_CONCEPT_CONFIG);
       onChange(deepClone(grouping));
       renderEditor();

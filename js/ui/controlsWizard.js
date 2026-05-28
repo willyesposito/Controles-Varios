@@ -1,10 +1,9 @@
 // controlsWizard.js — Wizard de ejecución de controles para un cliente
 //
-// Flujo de 4 pasos:
+// Flujo de 3 pasos:
 //   1. Cargar Tabulado (archivo pivote, requerido por la mayoría de controles)
 //   2. Seleccionar controles y cargar sus archivos adicionales
-//   3. Elegir período y agregar notas
-//   4. Ejecutar y navegar a resultados
+//   3. Elegir período, revisar resumen y ejecutar
 
 import {
   getClient,
@@ -118,18 +117,32 @@ function render(root, state) {
   const content = root.querySelector('#js-step-content');
   content.innerHTML = '';
   switch (state.step) {
-    case 0: renderStepTab(content, state, root);     break;
-    case 1: renderStepControls(content, state, root); break;
-    case 2: renderStepConfig(content, state, root);   break;
-    case 3: renderStepExecute(content, state, root);  break;
+    case 0: renderStepTab(content, state, root);      break;
+    case 1: renderStepControls(content, state, root);  break;
+    case 2: renderStepExecute(content, state, root);   break;
   }
 
   // Botones de navegación
   renderWizardNav(root, state);
+
+  // Atajos de teclado: ← → para moverse entre pasos
+  if (state._navController) state._navController.abort();
+  state._navController = new AbortController();
+  document.addEventListener('keydown', (e) => {
+    const tag = document.activeElement?.tagName;
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+    if (e.key === 'ArrowRight' && canGoNext(state) && state.step < 2) {
+      state.step++;
+      render(root, state);
+    } else if (e.key === 'ArrowLeft' && state.step > 0) {
+      state.step--;
+      render(root, state);
+    }
+  }, { signal: state._navController.signal });
 }
 
 function buildStepDots(current) {
-  const labels = ['Tabulado', 'Controles', 'Período', 'Ejecutar'];
+  const labels = ['Tabulado', 'Controles', 'Ejecutar'];
   return labels.map((lbl, i) => {
     const isDone   = i < current;
     const isActive = i === current;
@@ -149,7 +162,7 @@ function buildStepDots(current) {
 function renderWizardNav(root, state) {
   const nav = root.querySelector('#js-wizard-nav');
   const isFirst = state.step === 0;
-  const isLast  = state.step === 3;
+  const isLast  = state.step === 2;
   const canNext = canGoNext(state);
 
   const hint = !canNext && !isLast ? nextStepHint(state) : '';
@@ -183,7 +196,6 @@ function nextStepHint(state) {
   switch (state.step) {
     case 0: return 'Cargá el Tabulado para continuar';
     case 1: return 'Completá los archivos y columnas requeridas';
-    case 2: return 'Elegí un período';
     default: return '';
   }
 }
@@ -223,7 +235,6 @@ function canGoNext(state) {
       }
       return true;
     }
-    case 2: return !!state.period;
     default: return false;
   }
 }
@@ -343,6 +354,7 @@ function renderStepTab(container, state, root) {
 
   // Botón reemplazar
   container.querySelector('#js-catalog-replace')?.addEventListener('click', () => {
+    if (!confirm('¿Reemplazar el catálogo guardado? Se perderá el catálogo actual.')) return;
     const statusEl = container.querySelector('#js-catalog-status');
     const uploadEl = container.querySelector('#js-catalog-upload');
     statusEl.innerHTML = '<div class="alert alert--info" style="margin:0;">Cargá el nuevo catálogo:</div>';
@@ -801,9 +813,10 @@ function renderTabExtraConfig(container, state, root, { hasBrutos, hasGsPers, ha
   panel.style.cssText = 'margin-top:var(--sp-3);padding:var(--sp-3) var(--sp-4);border:1px solid var(--color-border);border-radius:var(--radius-md);background:var(--color-surface);';
   panel.innerHTML = `
     <h4 style="margin:0 0 var(--sp-1);font-size:var(--text-base);">Columnas del Tabulado — ${esc(headerTitle)}</h4>
-    <p class="text-muted" style="margin:0 0 var(--sp-3);font-size:var(--text-sm);">
-      Indicá qué columna del Tabulado corresponde a cada campo. FECHA_INI y FECHA_FIN se calculan del período.
-    </p>
+    ${autoDetected
+      ? `<p class="text-sm" style="margin:0 0 var(--sp-2);color:var(--color-match-exact);">🤖 Se detectaron las columnas automáticamente — verificá que sean correctas.</p>`
+      : `<p class="text-muted" style="margin:0 0 var(--sp-3);font-size:var(--text-sm);">Indicá qué columna del Tabulado corresponde a cada campo. FECHA_INI y FECHA_FIN se calculan del período.</p>`
+    }
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:var(--sp-3);">
       ${fields.map(f => {
         if (f.groupHeader) {
@@ -874,14 +887,14 @@ function renderStepConfig(container, state) {
   });
 }
 
-// ── Paso 3: Resumen y ejecución ───────────────────────────────────────────────
+// ── Paso 2: Período, resumen y ejecución ─────────────────────────────────────
 
 function renderStepExecute(container, state, root) {
+  const periods  = periodOptions(13);
   const ctrlList = state.selectedControls
     .map(id => CONTROL_REGISTRY[id]?.label || id)
     .join(', ');
 
-  // Línea por cada archivo adicional cargado
   const filesInfo = state.selectedControls.flatMap(id => {
     const ctrl = CONTROL_REGISTRY[id];
     if (!ctrl) return [];
@@ -894,19 +907,39 @@ function renderStepExecute(container, state, root) {
   }).join('<br>');
 
   container.innerHTML = `
-    <h3 style="margin:0 0 var(--sp-3);">Paso 4 — Resumen</h3>
+    <h3 style="margin:0 0 var(--sp-3);">Paso 3 — Período y ejecución</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-3);margin-bottom:var(--sp-3);max-width:680px;">
+      <div class="form-group" style="margin-bottom:0;">
+        <label class="form-label form-label--required">Período</label>
+        <select class="form-select" id="js-period-select">
+          ${periods.map(p =>
+            `<option value="${esc(p.value)}" ${p.value === state.period ? 'selected' : ''}>${esc(p.label)}</option>`
+          ).join('')}
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label class="form-label">Notas (opcional)</label>
+        <input type="text" class="form-input" id="js-notes-input"
+               value="${esc(state.notes)}"
+               placeholder="Observaciones del analista...">
+      </div>
+    </div>
     <div class="alert alert--info" style="margin-bottom:var(--sp-3);">
       <strong>Cliente:</strong> ${esc(state.client.name)}<br>
-      <strong>Período:</strong> ${esc(state.period)}<br>
       <strong>Controles:</strong> ${esc(ctrlList)}<br>
       <strong>Tabulado:</strong> ${esc(state.tab?.fileName || '—')} (${state.tab?.parseMetadata?.totalRows ?? 0} registros)<br>
       ${filesInfo}
-      ${state.notes ? `<br><strong>Notas:</strong> ${esc(state.notes)}` : ''}
     </div>
     <button class="btn btn--primary btn--lg" id="js-execute-btn">⚡ Ejecutar controles</button>
     <div id="js-execute-status" style="margin-top:var(--sp-5);"></div>
   `;
 
+  container.querySelector('#js-period-select').addEventListener('change', e => {
+    state.period = e.target.value;
+  });
+  container.querySelector('#js-notes-input').addEventListener('input', e => {
+    state.notes = e.target.value;
+  });
   container.querySelector('#js-execute-btn').addEventListener('click', () => {
     container.querySelector('#js-execute-btn').disabled = true;
     executeControls(state, container.querySelector('#js-execute-status'));
@@ -997,15 +1030,13 @@ async function executeControls(state, statusEl) {
   } catch (err) {
     console.error('[controlsWizard] Error al ejecutar:', err);
     statusEl.innerHTML = `
-      <div class="alert alert--danger">
-        ❌ Error al ejecutar los controles: ${esc(err.message)}<br>
-        <button class="btn btn--ghost btn--sm" style="margin-top:var(--sp-3);"
-                onclick="this.closest('#js-execute-status').innerHTML='';
-                         document.querySelector('#js-execute-btn').disabled=false;">
-          ← Volver a intentar
-        </button>
+      <div class="alert alert--danger" style="margin-bottom:0;">
+        ❌ Error al ejecutar los controles: ${esc(err.message)}
       </div>
     `;
+    // Re-habilitar el botón para que el usuario pueda corregir y reintentar
+    const execBtn = statusEl.parentElement?.querySelector('#js-execute-btn');
+    if (execBtn) execBtn.disabled = false;
   }
 }
 
