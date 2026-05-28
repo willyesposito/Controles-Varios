@@ -37,11 +37,39 @@ async function reloadList(root) {
 
   if (clients.length === 0) {
     container.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state__icon">🏢</div>
-        <div class="empty-state__title">Todavía no hay clientes</div>
-        <p class="empty-state__text">Creá el primer cliente para empezar a validar nóminas.</p>
-        <button class="btn btn--primary" id="js-first-client-btn">+ Crear primer cliente</button>
+      <div class="empty-state" style="max-width:680px;margin:0 auto;">
+        <div class="empty-state__icon">👋</div>
+        <div class="empty-state__title">Bienvenido a Controles Nómina</div>
+        <p class="empty-state__text" style="margin-bottom:var(--sp-5);">
+          Esta app cruza los archivos que te manda el cliente contra el Tabulado de nómina y
+          detecta diferencias de manera automática — todo en tu navegador, sin subir nada a Internet.
+        </p>
+
+        <div style="
+          display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+          gap:var(--sp-3);text-align:left;margin-bottom:var(--sp-5);
+        ">
+          <div style="padding:var(--sp-3);background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);">
+            <div style="font-size:1.4em;margin-bottom:var(--sp-1);">1️⃣</div>
+            <strong style="font-size:var(--text-sm);">Creá un cliente</strong>
+            <p class="text-sm text-muted" style="margin:var(--sp-1) 0 0;">Cada cliente guarda su propio catálogo de conceptos y sus perfiles de columnas.</p>
+          </div>
+          <div style="padding:var(--sp-3);background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);">
+            <div style="font-size:1.4em;margin-bottom:var(--sp-1);">2️⃣</div>
+            <strong style="font-size:var(--text-sm);">Cargá los archivos</strong>
+            <p class="text-sm text-muted" style="margin:var(--sp-1) 0 0;">Tabulado, Cat. Empleados, Brutos, NR, Rendimiento — solo los que necesite cada control.</p>
+          </div>
+          <div style="padding:var(--sp-3);background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);">
+            <div style="font-size:1.4em;margin-bottom:var(--sp-1);">3️⃣</div>
+            <strong style="font-size:var(--text-sm);">Ejecutá los controles</strong>
+            <p class="text-sm text-muted" style="margin:var(--sp-1) 0 0;">Mirás los resultados, descargás un Excel con las diferencias y listo.</p>
+          </div>
+        </div>
+
+        <button class="btn btn--primary btn--lg" id="js-first-client-btn">+ Crear primer cliente</button>
+        <p class="text-sm text-muted" style="margin-top:var(--sp-3);">
+          🔒 Todos los datos quedan guardados localmente en este navegador.
+        </p>
       </div>
     `;
     container.querySelector('#js-first-client-btn').addEventListener('click', () => showCreateModal(root));

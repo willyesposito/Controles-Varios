@@ -168,10 +168,17 @@ function renderWizardNav(root, state) {
   const hint = !canNext && !isLast ? nextStepHint(state) : '';
 
   nav.innerHTML = `
-    <div>
+    <div style="display:flex;align-items:center;gap:var(--sp-3);">
       ${!isFirst
         ? `<button class="btn btn--ghost btn--sm" id="js-prev-btn">← Anterior</button>`
         : ''}
+      ${!isLast ? `
+        <span class="text-muted" style="font-size:11px;display:none;" id="js-kbd-hint">
+          <kbd style="padding:1px 5px;border:1px solid var(--color-border);border-radius:3px;background:var(--color-surface);font-family:monospace;font-size:10px;">←</kbd>
+          <kbd style="padding:1px 5px;border:1px solid var(--color-border);border-radius:3px;background:var(--color-surface);font-family:monospace;font-size:10px;">→</kbd>
+          navegar
+        </span>
+      ` : ''}
     </div>
     <div style="display:flex;align-items:center;gap:var(--sp-3);">
       ${hint ? `<span class="text-sm text-muted" style="font-style:italic;">${hint}</span>` : ''}
@@ -182,6 +189,10 @@ function renderWizardNav(root, state) {
         : ''}
     </div>
   `;
+
+  // Mostrar hint de teclado solo en pantallas anchas (>720px) para no quitar espacio en móvil
+  const kbdHint = nav.querySelector('#js-kbd-hint');
+  if (kbdHint && window.innerWidth > 720) kbdHint.style.display = 'inline';
 
   nav.querySelector('#js-prev-btn')?.addEventListener('click', () => {
     state.step--;
@@ -248,7 +259,37 @@ function renderStepTab(container, state, root) {
     : `📂 Sin catálogo cargado — se usará el catálogo estándar (${CATALOGO_SEED.length} conceptos).`;
 
   container.innerHTML = `
-    <h3 style="margin:0 0 var(--sp-1);">Paso 1 — Tabulado estandarizado</h3>
+    <div style="display:flex;align-items:center;gap:var(--sp-2);margin:0 0 var(--sp-1);position:relative;">
+      <h3 style="margin:0;">Paso 1 — Tabulado estandarizado</h3>
+      <details style="flex-shrink:0;">
+        <summary style="
+          list-style:none;cursor:pointer;font-size:0.95em;
+          width:1.5em;height:1.5em;display:flex;align-items:center;justify-content:center;
+          border-radius:50%;border:1px solid var(--color-border);background:var(--color-bg);
+          color:var(--color-primary);user-select:none;
+        " title="¿Qué es el Tabulado?">ℹ</summary>
+        <div style="
+          position:absolute;z-index:10;margin-top:var(--sp-2);left:0;top:100%;
+          max-width:560px;width:90vw;
+          padding:var(--sp-4);background:var(--color-bg);
+          border:1px solid var(--color-border);border-radius:var(--radius-md);
+          box-shadow:0 4px 16px rgba(0,0,0,0.12);font-size:var(--text-sm);
+        ">
+          <p style="margin:0 0 var(--sp-3);font-weight:var(--fw-semibold);">¿Qué es el Tabulado?</p>
+          <p style="margin:0 0 var(--sp-3);">
+            Es el archivo Excel que exporta el sistema de nómina del cliente con
+            <strong>una fila por empleado</strong> y <strong>una columna por concepto</strong>
+            (sueldo, asignaciones, aportes, contribuciones, etc.). Es el "estado de cuenta"
+            del mes que vamos a auditar.
+          </p>
+          <p style="margin:0 0 var(--sp-2);font-weight:var(--fw-semibold);">¿Por qué es central?</p>
+          <p style="margin:0;">
+            Todos los controles lo usan como base. Los demás archivos (Brutos, NR, Rendimiento)
+            se cruzan contra el Tabulado para detectar diferencias.
+          </p>
+        </div>
+      </details>
+    </div>
     <p class="text-muted" style="margin:0 0 var(--sp-3);font-size:var(--text-sm);">
       Este archivo es la base para todos los controles. Se carga una vez por sesión y se comparte entre los controles.
     </p>
@@ -536,7 +577,40 @@ function renderStepControls(container, state, root) {
   }).join('');
 
   container.innerHTML = `
-    <h3 style="margin:0 0 var(--sp-1);">Paso 2 — Controles a ejecutar</h3>
+    <div style="display:flex;align-items:center;gap:var(--sp-2);margin:0 0 var(--sp-1);position:relative;">
+      <h3 style="margin:0;">Paso 2 — Controles a ejecutar</h3>
+      <details style="flex-shrink:0;">
+        <summary style="
+          list-style:none;cursor:pointer;font-size:0.95em;
+          width:1.5em;height:1.5em;display:flex;align-items:center;justify-content:center;
+          border-radius:50%;border:1px solid var(--color-border);background:var(--color-bg);
+          color:var(--color-primary);user-select:none;
+        " title="¿Qué es un control?">ℹ</summary>
+        <div style="
+          position:absolute;z-index:10;margin-top:var(--sp-2);left:0;top:100%;
+          max-width:560px;width:90vw;
+          padding:var(--sp-4);background:var(--color-bg);
+          border:1px solid var(--color-border);border-radius:var(--radius-md);
+          box-shadow:0 4px 16px rgba(0,0,0,0.12);font-size:var(--text-sm);
+        ">
+          <p style="margin:0 0 var(--sp-3);font-weight:var(--fw-semibold);">¿Qué es un control?</p>
+          <p style="margin:0 0 var(--sp-3);">
+            Cada control es un cruce automático entre el Tabulado y otro archivo del cliente
+            (o entre filas del propio Tabulado). El sistema marca las diferencias por empleado
+            y devuelve un Excel con el detalle.
+          </p>
+          <p style="margin:0 0 var(--sp-2);font-weight:var(--fw-semibold);">Ejemplos</p>
+          <ul style="margin:0;padding-left:var(--sp-5);line-height:1.6;">
+            <li><strong>Brutos:</strong> compara el sueldo del Tabulado con el del reporte de Brutos.</li>
+            <li><strong>RendvsTabu:</strong> compara los conceptos del Tabulado con el reporte de Rendimiento por centro de costo.</li>
+            <li><strong>Cat x Empleados:</strong> verifica que cada empleado del Tabulado esté activo en el Catálogo de Empleados.</li>
+          </ul>
+          <p class="text-muted" style="margin:var(--sp-3) 0 0;font-size:0.9em;">
+            Abrí "¿Qué hace cada control?" más abajo para ver la ficha completa de cada uno.
+          </p>
+        </div>
+      </details>
+    </div>
     <p class="text-muted" style="margin:0 0 var(--sp-3);font-size:var(--text-sm);">
       Seleccioná los controles que querés ejecutar. Cada uno puede requerir cargar un archivo adicional.
     </p>
