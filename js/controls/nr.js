@@ -1,4 +1,5 @@
 // nr.js — Control No Remunerativos (Control NR)
+import { showToast } from '../ui/toast.js';
 //
 // Modo 1 — "Controlar": cruza los 18 conceptos NR del Reporte de M4
 //   contra las columnas configuradas en el Tabulado.
@@ -121,7 +122,7 @@ export function renderNrResults(results, container) {
     try {
       await exportNrToXlsx(results);
     } catch (err) {
-      alert('Error al generar el archivo: ' + err.message);
+      showToast('Error al generar el archivo: ' + err.message, 'danger');
     } finally {
       exportBtn.disabled = false;
       exportBtn.textContent = '⬇ Exportar .xlsx';
@@ -250,7 +251,7 @@ export function renderNrReporteResults(results, container) {
     try {
       await exportNrReporteToXlsx(results);
     } catch (err) {
-      alert('Error al generar el archivo: ' + err.message);
+      showToast('Error al generar el archivo: ' + err.message, 'danger');
     } finally {
       exportBtn.disabled = false;
       exportBtn.textContent = '⬇ Exportar .xlsx';

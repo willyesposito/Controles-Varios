@@ -709,6 +709,70 @@
   transform: translateY(-2px);
 }
 
+/* ── Skeleton loaders ────────────────────────────────────────── */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.45; }
+}
+.skeleton-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--sp-5);
+}
+.skeleton-card {
+  background: var(--color-surface);
+  border: var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-5) var(--sp-6);
+  animation: skeleton-pulse 1.6s ease-in-out infinite;
+}
+.skeleton-line {
+  background: var(--color-bg-subtle);
+  border-radius: var(--radius-sm);
+  height: 14px;
+  margin-bottom: var(--sp-3);
+}
+.skeleton-line--title { height: 20px; width: 55%; margin-bottom: var(--sp-2); }
+.skeleton-line--sm    { height: 12px; }
+.skeleton-line--sm:last-of-type { width: 40%; }
+.skeleton-footer {
+  height: 32px;
+  background: var(--color-bg-subtle);
+  border-radius: var(--radius-sm);
+  margin-top: var(--sp-4);
+}
+
+/* ── Fade-in para contenido del wizard ───────────────────────── */
+@keyframes wizard-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.wizard-step-fade {
+  animation: wizard-fade-in 180ms ease;
+}
+
+/* ── Pills por familia de controles ──────────────────────────── */
+/* Orange — Brutos */
+.pill--group-orange                    { border-color: var(--color-group-orange); color: var(--color-group-orange); }
+.pill--group-orange:hover              { background: var(--color-group-orange-bg); border-color: var(--color-group-orange); color: var(--color-group-orange); }
+.pill--group-orange.pill--active       { background: var(--color-group-orange); border-color: var(--color-group-orange); color: #fff; }
+.pill--group-orange.pill--active:hover { filter: brightness(0.9); }
+/* Purple — GS Pers */
+.pill--group-purple                    { border-color: var(--color-group-purple); color: var(--color-group-purple); }
+.pill--group-purple:hover              { background: var(--color-group-purple-bg); border-color: var(--color-group-purple); color: var(--color-group-purple); }
+.pill--group-purple.pill--active       { background: var(--color-group-purple); border-color: var(--color-group-purple); color: #fff; }
+.pill--group-purple.pill--active:hover { filter: brightness(0.9); }
+/* Teal — NR */
+.pill--group-teal                    { border-color: var(--color-group-teal); color: var(--color-group-teal); }
+.pill--group-teal:hover              { background: var(--color-group-teal-bg); border-color: var(--color-group-teal); color: var(--color-group-teal); }
+.pill--group-teal.pill--active       { background: var(--color-group-teal); border-color: var(--color-group-teal); color: #fff; }
+.pill--group-teal.pill--active:hover { filter: brightness(0.9); }
+/* Amber — Rendimiento */
+.pill--group-amber                    { border-color: var(--color-group-amber); color: var(--color-group-amber); }
+.pill--group-amber:hover              { background: var(--color-group-amber-bg); border-color: var(--color-group-amber); color: var(--color-group-amber); }
+.pill--group-amber.pill--active       { background: var(--color-group-amber); border-color: var(--color-group-amber); color: #fff; }
+.pill--group-amber.pill--active:hover { filter: brightness(0.9); }
+
 /* ── Barra de progreso ───────────────────────────────────────── */
 .progress-bar-wrap {
   width: 100%;

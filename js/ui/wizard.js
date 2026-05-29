@@ -15,6 +15,7 @@ import { initFileUploadStep } from './fileUpload.js';
 import { runMatching } from '../matching.js';
 import { computeInsights } from '../insights.js';
 import { currentPeriod, periodOptions, periodToLabel } from '../utils/dates.js';
+import { showToast } from './toast.js';
 
 const STEPS = [
   { label: 'Nómina Maestra',     short: '1' },
@@ -316,9 +317,9 @@ export async function renderWizard(root, clientId) {
     const execArea = root.querySelector('#js-execute-area');
     if (!execArea) return;
 
-    if (!state.nomina?.parsedRows?.length) { alert('Cargá la Nómina Maestra antes de ejecutar.'); return; }
-    if (!state.resumen?.parsedRows?.length) { alert('Cargá el Resumen antes de ejecutar.'); return; }
-    if (!state.selectedGrouperIds.length) { alert('Seleccioná al menos un agrupador.'); return; }
+    if (!state.nomina?.parsedRows?.length) { showToast('Cargá la Nómina Maestra antes de ejecutar.', 'warning'); return; }
+    if (!state.resumen?.parsedRows?.length) { showToast('Cargá el Resumen antes de ejecutar.', 'warning'); return; }
+    if (!state.selectedGrouperIds.length) { showToast('Seleccioná al menos un agrupador.', 'warning'); return; }
 
     execArea.innerHTML = `
       <div class="loading-screen">

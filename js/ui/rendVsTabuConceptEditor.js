@@ -1,6 +1,7 @@
 // rendVsTabuConceptEditor.js — Editor de agrupación de conceptos para Control 5 RendvsTabu
 
 import { DEFAULT_CONCEPT_CONFIG } from '../controls/rendVsTabu.js';
+import { showConfirm }            from './toast.js';
 
 const CAT_META = [
   { key: 'precio',   label: 'PRECIO',          hdr: 'rgba(0,112,192,0.22)',  bg: 'rgba(0,112,192,0.08)' },
@@ -205,8 +206,8 @@ export function renderConceptGroupingEditor(container, tabRows, currentGrouping,
       });
     });
 
-    container.querySelector('#js-rtv-restore')?.addEventListener('click', () => {
-      if (!confirm('¿Restaurar la agrupación predeterminada? Se perderán los cambios actuales.')) return;
+    container.querySelector('#js-rtv-restore')?.addEventListener('click', async () => {
+      if (!await showConfirm('¿Restaurar la agrupación predeterminada? Se perderán los cambios actuales.')) return;
       grouping = deepClone(DEFAULT_CONCEPT_CONFIG);
       onChange(deepClone(grouping));
       renderEditor();

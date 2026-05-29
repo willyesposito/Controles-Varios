@@ -1,4 +1,5 @@
 // gsPers.js — Controles de Gastos Personales y Cochera (GS Pers)
+import { showToast } from '../ui/toast.js';
 //
 // Modo 1 — "Controlar": cruza GTOS_PERSONALES y DTO_COCHERA del Reporte de GS Pers
 //   contra las columnas configuradas en el Tabulado (tabGtosPersonalesColumn / tabDtoCocheraColumn).
@@ -110,7 +111,7 @@ export function renderGsPersResults(results, container) {
     try {
       await exportGsPersToXlsx(results);
     } catch (err) {
-      alert('Error al generar el archivo: ' + err.message);
+      showToast('Error al generar el archivo: ' + err.message, 'danger');
     } finally {
       exportBtn.disabled = false;
       exportBtn.textContent = '⬇ Exportar .xlsx';
@@ -254,7 +255,7 @@ export function renderGsPersReporteResults(results, container) {
     try {
       await exportGsPersReporteToXlsx(results);
     } catch (err) {
-      alert('Error al generar el archivo: ' + err.message);
+      showToast('Error al generar el archivo: ' + err.message, 'danger');
     } finally {
       exportBtn.disabled = false;
       exportBtn.textContent = '⬇ Exportar .xlsx';

@@ -1,4 +1,5 @@
 // brutos.js — Controles del Reporte de Brutos
+import { showToast } from '../ui/toast.js';
 //
 // Modo 1 — "Controlar": cruza SAL_BASE y A_CTA_FUT_AUMEN del Reporte de Brutos
 //   contra las columnas configuradas en el Tabulado (tabSalBaseColumn / tabACuFutAumenColumn).
@@ -119,7 +120,7 @@ export function renderBrutosResults(results, container) {
     try {
       await exportBrutosToXlsx(results);
     } catch (err) {
-      alert('Error al generar el archivo: ' + err.message);
+      showToast('Error al generar el archivo: ' + err.message, 'danger');
     } finally {
       exportBtn.disabled = false;
       exportBtn.textContent = '⬇ Exportar .xlsx';
@@ -265,7 +266,7 @@ export function renderBrutosReporteResults(results, container) {
     try {
       await exportBrutosReporteToXlsx(results);
     } catch (err) {
-      alert('Error al generar el archivo: ' + err.message);
+      showToast('Error al generar el archivo: ' + err.message, 'danger');
     } finally {
       exportBtn.disabled = false;
       exportBtn.textContent = '⬇ Exportar .xlsx';

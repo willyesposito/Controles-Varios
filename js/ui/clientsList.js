@@ -4,6 +4,7 @@
 // ir al editor de agrupadores o borrar un cliente.
 
 import { getClients, createClient, updateClient, deleteClient } from '../db.js';
+import { showToast, showConfirm } from './toast.js';
 
 /**
  * Renderiza la pantalla de clientes en el elemento indicado.
@@ -21,7 +22,16 @@ export async function renderClientsList(root) {
         </div>
       </div>
       <div id="js-clients-container">
-        <div class="loading-screen"><div class="spinner"></div></div>
+        <div class="skeleton-cards">
+          ${[0,1,2].map(() => `
+            <div class="skeleton-card">
+              <div class="skeleton-line skeleton-line--title"></div>
+              <div class="skeleton-line skeleton-line--sm"></div>
+              <div class="skeleton-line skeleton-line--sm"></div>
+              <div class="skeleton-footer"></div>
+            </div>
+          `).join('')}
+        </div>
       </div>
     </div>
   `;
@@ -106,12 +116,12 @@ async function reloadList(root) {
     });
 
     card.querySelector('.js-delete-btn').addEventListener('click', async () => {
-      if (!confirm(`¿Seguro que querés borrar el cliente "${client.name}"?\nSe borrarán también todos sus agrupadores y sesiones.`)) return;
+      if (!await showConfirm(`¿Borrar el cliente "${client.name}"?\nSe borrarán también todos sus agrupadores y sesiones.`, { type: 'danger', confirmLabel: 'Borrar' })) return;
       try {
         await deleteClient(client.id);
         await reloadList(root);
       } catch (err) {
-        alert(`Error al borrar: ${err.message}`);
+        showToast(`Error al borrar: ${err.message}`, 'danger');
       }
     });
   });
@@ -180,13 +190,13 @@ function showCreateModal(root) {
   overlay.querySelector('#js-confirm-create').addEventListener('click', async () => {
     const name  = overlay.querySelector('#js-client-name').value.trim();
     const notes = overlay.querySelector('#js-client-notes').value.trim();
-    if (!name) { alert('El nombre del cliente es obligatorio.'); return; }
+    if (!name) { showToast('El nombre del cliente es obligatorio.', 'warning'); return; }
     try {
       await createClient(name, notes);
       close();
       await reloadList(root);
     } catch (err) {
-      alert(`Error al crear el cliente: ${err.message}`);
+      showToast(`Error al crear el cliente: ${err.message}`, 'danger');
     }
   });
 

@@ -9,6 +9,7 @@ import {
   getClient, getGroupers, createGrouper, deleteGrouper,
   getGrouperConcepts, addConceptToGrouper, removeConceptFromGrouper,
 } from '../db.js';
+import { showToast, showConfirm } from './toast.js';
 
 export async function renderGrouperEditor(root, clientId) {
   const client = await getClient(clientId);
@@ -71,7 +72,7 @@ async function reloadGroupers(root, clientId) {
 
     // Borrar agrupador
     card.querySelector('.js-delete-grouper').addEventListener('click', async () => {
-      if (!confirm(`¿Borrar el agrupador "${grouper.name}"? Se eliminan también sus conceptos.`)) return;
+      if (!await showConfirm(`¿Borrar el agrupador "${grouper.name}"? Se eliminan también sus conceptos.`, { type: 'danger', confirmLabel: 'Borrar' })) return;
       await deleteGrouper(grouper.id);
       await reloadGroupers(root, clientId);
     });
@@ -97,7 +98,7 @@ async function reloadGroupers(root, clientId) {
         input.value = '';
         await reloadGroupers(root, clientId);
       } catch (err) {
-        alert(`Error al agregar el concepto: ${err.message}`);
+        showToast(`Error al agregar el concepto: ${err.message}`, 'danger');
       }
     };
 
@@ -174,7 +175,7 @@ function showNewGrouperModal(root, clientId) {
 
   overlay.querySelector('#js-confirm').addEventListener('click', async () => {
     const name = overlay.querySelector('#js-grouper-name').value.trim();
-    if (!name) { alert('El nombre es obligatorio.'); return; }
+    if (!name) { showToast('El nombre del agrupador es obligatorio.', 'warning'); return; }
     await createGrouper(clientId, name);
     close();
     await reloadGroupers(root, clientId);

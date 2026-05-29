@@ -28,6 +28,7 @@ import { autoDetectRendimientoMapping } from '../parsers/rendimientoParser.js';
 import { buildParserMapping }           from '../parsers/conceptMatcher.js';
 import { currentPeriod, periodOptions } from '../utils/dates.js';
 import { renderConceptGroupingEditor }  from './rendVsTabuConceptEditor.js';
+import { showToast, showConfirm }       from './toast.js';
 
 // Mapa: fileType → función de auto-detección de columnas
 const AUTO_DETECT = {
@@ -113,13 +114,16 @@ function render(root, state) {
   // Indicadores de paso
   root.querySelector('#js-wizard-steps').innerHTML = buildStepDots(state.step);
 
-  // Contenido del paso
+  // Contenido del paso — envuelto en div para animación fade-in
   const content = root.querySelector('#js-step-content');
   content.innerHTML = '';
+  const fadeWrap = document.createElement('div');
+  fadeWrap.className = 'wizard-step-fade';
+  content.appendChild(fadeWrap);
   switch (state.step) {
-    case 0: renderStepTab(content, state, root);      break;
-    case 1: renderStepControls(content, state, root);  break;
-    case 2: renderStepExecute(content, state, root);   break;
+    case 0: renderStepTab(fadeWrap, state, root);      break;
+    case 1: renderStepControls(fadeWrap, state, root);  break;
+    case 2: renderStepExecute(fadeWrap, state, root);   break;
   }
 
   // Botones de navegación
@@ -364,8 +368,8 @@ function renderStepTab(container, state, root) {
   });
 
   // Botón reemplazar
-  container.querySelector('#js-catalog-replace')?.addEventListener('click', () => {
-    if (!confirm('¿Reemplazar el catálogo guardado? Se perderá el catálogo actual.')) return;
+  container.querySelector('#js-catalog-replace')?.addEventListener('click', async () => {
+    if (!await showConfirm('¿Reemplazar el catálogo guardado? Se perderá el catálogo actual.')) return;
     const statusEl = container.querySelector('#js-catalog-status');
     const uploadEl = container.querySelector('#js-catalog-upload');
     statusEl.innerHTML = '<div class="alert alert--info" style="margin:0;">Cargá el nuevo catálogo:</div>';
@@ -504,12 +508,22 @@ function isGroupExpanded(groupId, state) {
 function renderStepControls(container, state, root) {
   const blocks = buildControlBlocks();
 
+  // Colores por familia de controles
+  const GROUP_PILL_CLASS = {
+    brutos:          'pill--group-orange',
+    gs_pers:         'pill--group-purple',
+    nr:              'pill--group-teal',
+    rend_vs_tabu:    'pill--group-amber',
+    rend_vs_asiento: 'pill--group-amber',
+  };
+
   // Render de cada bloque como HTML
   const blocksHtml = blocks.map(b => {
     if (b.kind === 'standalone') {
-      const active = state.selectedControls.includes(b.ctrl.id);
+      const active     = state.selectedControls.includes(b.ctrl.id);
+      const colorClass = GROUP_PILL_CLASS[b.ctrl.id] || '';
       return `
-        <button class="pill ${active ? 'pill--active' : ''}"
+        <button class="pill ${active ? 'pill--active' : ''} ${colorClass}"
                 data-ctrl="${esc(b.ctrl.id)}"
                 title="${esc(b.ctrl.description)}">
           ${esc(b.ctrl.label)}
@@ -517,16 +531,17 @@ function renderStepControls(container, state, root) {
       `;
     }
     // Grupo con sub-modos
-    const groupId   = b.groupMeta.id;
-    const expanded  = isGroupExpanded(groupId, state);
-    const anyActive = b.controls.some(c => state.selectedControls.includes(c.id));
-    const arrow     = expanded ? '▾' : '▸';
-    const subsHtml  = expanded
+    const groupId    = b.groupMeta.id;
+    const expanded   = isGroupExpanded(groupId, state);
+    const anyActive  = b.controls.some(c => state.selectedControls.includes(c.id));
+    const arrow      = expanded ? '▾' : '▸';
+    const colorClass = GROUP_PILL_CLASS[groupId] || '';
+    const subsHtml   = expanded
       ? `<div class="control-group__modes">
            ${b.controls.map(c => {
              const subActive = state.selectedControls.includes(c.id);
              return `
-               <button class="pill pill--sub ${subActive ? 'pill--active' : ''}"
+               <button class="pill pill--sub ${subActive ? 'pill--active' : ''} ${colorClass}"
                        data-ctrl="${esc(c.id)}"
                        title="${esc(c.description)}">
                  ${esc(c.group.mode)}
@@ -537,7 +552,7 @@ function renderStepControls(container, state, root) {
       : '';
     return `
       <div class="control-group">
-        <button class="pill ${anyActive ? 'pill--active' : ''}"
+        <button class="pill ${anyActive ? 'pill--active' : ''} ${colorClass}"
                 data-group="${esc(groupId)}">
           ${esc(b.groupMeta.label)} ${arrow}
         </button>

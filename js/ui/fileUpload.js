@@ -1,6 +1,7 @@
 // fileUpload.js — Pantalla de carga de un archivo Excel con mapeo de columnas
 
 import { isValidExcelFile, readFileAsArrayBuffer } from '../utils/validators.js';
+import { showToast } from './toast.js';
 import { detectHeaders, parseNominaMaestra } from '../parsers/nominaMaestra.js';
 import { parseResumenLargo } from '../parsers/resumenLargoExcel.js';
 import { parseResumenTabulado } from '../parsers/resumenTabuladoHorizontalExcel.js';
@@ -557,7 +558,7 @@ function renderMappingForm(container, { headers, preview, fileType, savedMapping
     // Validar campos requeridos
     const faltantes = fields.filter(f => f.required && !mapping[f.key]).map(f => f.label);
     if (faltantes.length) {
-      alert(`Falta completar: ${faltantes.join(', ')}`);
+      showToast(`Falta completar: ${faltantes.join(', ')}`, 'warning');
       return;
     }
 
