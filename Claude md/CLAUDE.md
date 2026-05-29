@@ -123,7 +123,28 @@ Esto es **crítico** y aplica a todo el código:
 
 ---
 
-## 7. Estilo de commits
+## 7. Git workflow — obligatorio
+
+**Cada cambio de código debe terminar con el ciclo completo: commit → push → PR → merge a main.** Sin excepciones, sin pedir confirmación a Willy.
+
+Secuencia exacta:
+```
+git add <archivos modificados>
+git commit -m "..."
+git checkout -b feat/nombre-descriptivo   # o fix/ según corresponda
+git push -u origin feat/nombre-descriptivo
+"C:\Program Files\GitHub CLI\gh.exe" pr create --base main --head feat/nombre-descriptivo --title "..." --body "..."
+"C:\Program Files\GitHub CLI\gh.exe" pr merge --merge --delete-branch
+```
+
+Notas:
+- `gh` no está en el PATH — usar ruta completa `C:\Program Files\GitHub CLI\gh.exe`
+- Willy es el único owner del repo, no hay reviewers — mergear directo
+- El objetivo es que el cambio esté en `main` antes de terminar la respuesta
+
+---
+
+## 8. Estilo de commits
 
 Usar **Conventional Commits** (es el estándar más práctico):
 
