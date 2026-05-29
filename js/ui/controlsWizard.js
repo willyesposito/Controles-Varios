@@ -508,22 +508,12 @@ function isGroupExpanded(groupId, state) {
 function renderStepControls(container, state, root) {
   const blocks = buildControlBlocks();
 
-  // Colores por familia de controles
-  const GROUP_PILL_CLASS = {
-    brutos:          'pill--group-orange',
-    gs_pers:         'pill--group-purple',
-    nr:              'pill--group-teal',
-    rend_vs_tabu:    'pill--group-amber',
-    rend_vs_asiento: 'pill--group-amber',
-  };
-
   // Render de cada bloque como HTML
   const blocksHtml = blocks.map(b => {
     if (b.kind === 'standalone') {
-      const active     = state.selectedControls.includes(b.ctrl.id);
-      const colorClass = GROUP_PILL_CLASS[b.ctrl.id] || '';
+      const active = state.selectedControls.includes(b.ctrl.id);
       return `
-        <button class="pill ${active ? 'pill--active' : ''} ${colorClass}"
+        <button class="pill ${active ? 'pill--active' : ''}"
                 data-ctrl="${esc(b.ctrl.id)}"
                 title="${esc(b.ctrl.description)}">
           ${esc(b.ctrl.label)}
@@ -531,17 +521,16 @@ function renderStepControls(container, state, root) {
       `;
     }
     // Grupo con sub-modos
-    const groupId    = b.groupMeta.id;
-    const expanded   = isGroupExpanded(groupId, state);
-    const anyActive  = b.controls.some(c => state.selectedControls.includes(c.id));
-    const arrow      = expanded ? '▾' : '▸';
-    const colorClass = GROUP_PILL_CLASS[groupId] || '';
-    const subsHtml   = expanded
+    const groupId   = b.groupMeta.id;
+    const expanded  = isGroupExpanded(groupId, state);
+    const anyActive = b.controls.some(c => state.selectedControls.includes(c.id));
+    const arrow     = expanded ? '▾' : '▸';
+    const subsHtml  = expanded
       ? `<div class="control-group__modes">
            ${b.controls.map(c => {
              const subActive = state.selectedControls.includes(c.id);
              return `
-               <button class="pill pill--sub ${subActive ? 'pill--active' : ''} ${colorClass}"
+               <button class="pill pill--sub ${subActive ? 'pill--active' : ''}"
                        data-ctrl="${esc(c.id)}"
                        title="${esc(c.description)}">
                  ${esc(c.group.mode)}
@@ -552,7 +541,7 @@ function renderStepControls(container, state, root) {
       : '';
     return `
       <div class="control-group">
-        <button class="pill ${anyActive ? 'pill--active' : ''} ${colorClass}"
+        <button class="pill ${anyActive ? 'pill--active' : ''}"
                 data-group="${esc(groupId)}">
           ${esc(b.groupMeta.label)} ${arrow}
         </button>

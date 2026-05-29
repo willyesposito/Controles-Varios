@@ -751,27 +751,6 @@
   animation: wizard-fade-in 180ms ease;
 }
 
-/* ── Pills por familia de controles ──────────────────────────── */
-/* Orange — Brutos */
-.pill--group-orange                    { border-color: var(--color-group-orange); color: var(--color-group-orange); }
-.pill--group-orange:hover              { background: var(--color-group-orange-bg); border-color: var(--color-group-orange); color: var(--color-group-orange); }
-.pill--group-orange.pill--active       { background: var(--color-group-orange); border-color: var(--color-group-orange); color: #fff; }
-.pill--group-orange.pill--active:hover { filter: brightness(0.9); }
-/* Purple — GS Pers */
-.pill--group-purple                    { border-color: var(--color-group-purple); color: var(--color-group-purple); }
-.pill--group-purple:hover              { background: var(--color-group-purple-bg); border-color: var(--color-group-purple); color: var(--color-group-purple); }
-.pill--group-purple.pill--active       { background: var(--color-group-purple); border-color: var(--color-group-purple); color: #fff; }
-.pill--group-purple.pill--active:hover { filter: brightness(0.9); }
-/* Teal — NR */
-.pill--group-teal                    { border-color: var(--color-group-teal); color: var(--color-group-teal); }
-.pill--group-teal:hover              { background: var(--color-group-teal-bg); border-color: var(--color-group-teal); color: var(--color-group-teal); }
-.pill--group-teal.pill--active       { background: var(--color-group-teal); border-color: var(--color-group-teal); color: #fff; }
-.pill--group-teal.pill--active:hover { filter: brightness(0.9); }
-/* Amber — Rendimiento */
-.pill--group-amber                    { border-color: var(--color-group-amber); color: var(--color-group-amber); }
-.pill--group-amber:hover              { background: var(--color-group-amber-bg); border-color: var(--color-group-amber); color: var(--color-group-amber); }
-.pill--group-amber.pill--active       { background: var(--color-group-amber); border-color: var(--color-group-amber); color: #fff; }
-.pill--group-amber.pill--active:hover { filter: brightness(0.9); }
 
 /* ── Barra de progreso ───────────────────────────────────────── */
 .progress-bar-wrap {
