@@ -57,6 +57,7 @@ export function parseConta(arrayBuffer) {
     parsedRows.push({
       id_empleado:       norm(row['ID_EMPLEADO']),
       id_concepto:       norm(row['ID_CONCEPTO']),
+      nombre_largo:      norm(row['NOMBRE_LARGO']),
       cc_nombre:         cc,
       id_centro_costo:   norm(row['ID_CENTRO_COSTO']),
       id_conta:          norm(row['ID_CONTA']),
