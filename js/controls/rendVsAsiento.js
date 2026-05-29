@@ -54,7 +54,7 @@ const COLS = [
 ];
 
 // Panel de mapeo: qué cuenta/concepto alimenta cada categoría
-const ACCOUNT_MAP_DISPLAY = [
+export const ACCOUNT_MAP_DISPLAY = [
   { cat: 'PRECIO',         entries: [{ code: '5208001', type: 'cuenta' }] },
   { cat: 'ASIG. ESTÍMULO', entries: [{ code: '5208006', type: 'cuenta' }] },
   { cat: 'CARGAS SS',      entries: [{ code: '5208005', type: 'cuenta' }] },
@@ -100,6 +100,92 @@ const fmt = v => v === null
 const THRESHOLD = 0.01;
 const hasDiff   = d => d !== null && Math.abs(d) > THRESHOLD;
 const diffStyle = d => hasDiff(d) ? 'color:var(--color-danger);font-weight:600;' : '';
+
+// ── Panel de mapeo (visible en Archivos y en Resultados) ─────────────────────
+
+/**
+ * Renderiza un panel informativo con el mapeo de CONTA → Rendimiento.
+ * @param {HTMLElement} container - dónde insertar el panel
+ * @param {Object} opts
+ * @param {Object} opts.accountNames - mapeo opcional CUENTA_CONTAB → nombre legible
+ *                                     (ej: '5208001' → 'REMUNERACIONES'). Si no se
+ *                                     pasa, solo se muestra el código.
+ * @param {boolean} opts.openByDefault - si el <details> arranca abierto
+ */
+export function renderRendVsAsientoMappingPanel(container, { accountNames = {}, openByDefault = true } = {}) {
+  const ccRedirRows = Object.entries(CC_REDIR).map(([from, to]) => ({
+    from: from.replace(/\b\w/g, c => c.toUpperCase()),
+    to:   CC_REDIR_LABEL[to] ?? to,
+  }));
+
+  const categoryRows = ACCOUNT_MAP_DISPLAY.map(({ cat, entries }) => {
+    const items = entries.map(e => {
+      const sign = e.sign || '';
+      const name = e.type === 'cuenta' ? (accountNames[e.code] || '') : '';
+      return { sign, code: e.code, name, type: e.type };
+    });
+    return { cat, items };
+  });
+
+  const itemHtml = it => {
+    const signColor = it.sign === '−'
+      ? 'color:var(--color-danger);'
+      : it.sign === '+'
+        ? 'color:var(--color-match-exact, green);'
+        : '';
+    const nameSuffix = it.name
+      ? ` <span style="color:var(--color-text-muted);">— ${esc(it.name)}</span>`
+      : '';
+    const prefix = it.type === 'concepto' ? 'ID_CONCEPTO ' : '';
+    return `<span style="display:inline-block;padding:2px 8px;margin:2px 4px 2px 0;background:var(--color-bg-subtle);border:1px solid var(--color-border);border-radius:var(--radius-sm);font-family:monospace;font-size:var(--text-sm);${signColor}">${esc(prefix)}${esc(it.sign)}${esc(it.code)}${nameSuffix}</span>`;
+  };
+
+  const categoryRowsHtml = categoryRows.map(({ cat, items }) => `
+    <tr>
+      <td style="padding:6px 10px;border:1px solid var(--color-border);font-weight:var(--fw-semibold);white-space:nowrap;vertical-align:top;background:var(--color-bg-subtle);">${esc(cat)}</td>
+      <td style="padding:6px 10px;border:1px solid var(--color-border);">${items.map(itemHtml).join('')}</td>
+    </tr>
+  `).join('');
+
+  const ccRedirHtml = ccRedirRows.length === 0
+    ? ''
+    : `
+      <p style="margin:var(--sp-3) 0 var(--sp-2);font-size:var(--text-sm);font-weight:var(--fw-semibold);">Mapeo de Centro de Costo (CONTA → Rendimiento)</p>
+      <ul style="margin:0;padding-left:var(--sp-5);font-size:var(--text-sm);line-height:1.8;">
+        ${ccRedirRows.map(r => `<li><code>${esc(r.from)}</code> en CONTA → <code>${esc(r.to)}</code> en Rendimiento</li>`).join('')}
+      </ul>
+    `;
+
+  const details = document.createElement('details');
+  if (openByDefault) details.open = true;
+  details.style.cssText = 'margin-top:var(--sp-3);';
+  details.innerHTML = `
+    <summary style="cursor:pointer;font-size:var(--text-sm);font-weight:var(--fw-semibold);color:var(--color-primary);list-style:none;display:flex;align-items:center;gap:var(--sp-2);user-select:none;padding:var(--sp-2) 0;">
+      <span class="js-rva-arrow">▾</span> Cómo se mapea CONTA a Rendimiento
+    </summary>
+    <div style="padding:var(--sp-3) var(--sp-4);background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);">
+      <p style="margin:0 0 var(--sp-3);font-size:var(--text-sm);color:var(--color-text-muted);">
+        Cada fila de la Contabilidad Desglosada se clasifica según su <code>CUENTA_CONTAB</code>
+        (o <code>ID_CONCEPTO</code> en el caso de PROV. CCSS MES). Por cada CC se suma <code>DEBE − HABER</code>
+        y el total se compara contra la columna correspondiente del Rendimiento.
+      </p>
+      <table style="border-collapse:collapse;width:100%;font-size:var(--text-sm);">
+        <thead>
+          <tr>
+            <th style="padding:6px 10px;border:1px solid var(--color-border);background:var(--color-bg-subtle);text-align:left;">Categoría</th>
+            <th style="padding:6px 10px;border:1px solid var(--color-border);background:var(--color-bg-subtle);text-align:left;">Cuentas / Conceptos</th>
+          </tr>
+        </thead>
+        <tbody>${categoryRowsHtml}</tbody>
+      </table>
+      ${ccRedirHtml}
+      <p style="margin:var(--sp-3) 0 0;font-size:var(--text-sm);color:var(--color-text-muted);font-style:italic;">
+        Estos códigos son fijos según el plan de cuentas estándar de M4. Si en tu caso son distintos, avisanos.
+      </p>
+    </div>
+  `;
+  container.appendChild(details);
+}
 
 // ── runRendVsAsiento ──────────────────────────────────────────────────────────
 
