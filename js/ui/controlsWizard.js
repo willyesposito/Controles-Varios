@@ -27,8 +27,9 @@ import { autoDetectNrMapping }          from '../parsers/nrParser.js';
 import { autoDetectRendimientoMapping } from '../parsers/rendimientoParser.js';
 import { buildParserMapping }           from '../parsers/conceptMatcher.js';
 import { currentPeriod, periodOptions } from '../utils/dates.js';
-import { renderConceptGroupingEditor }  from './rendVsTabuConceptEditor.js';
-import { showToast, showConfirm }       from './toast.js';
+import { renderConceptGroupingEditor }     from './rendVsTabuConceptEditor.js';
+import { renderRendVsAsientoMappingPanel } from '../controls/rendVsAsiento.js';
+import { showToast, showConfirm }          from './toast.js';
 
 // Mapa: fileType → función de auto-detección de columnas
 const AUTO_DETECT = {
@@ -617,6 +618,14 @@ function renderStepFiles(container, state, root) {
           renderWizardNav(root, state);
         },
       });
+    }
+
+    // Panel de mapeo de Rendimiento vs Asiento (visible junto a sus archivos)
+    if (controlId === 'rend_vs_asiento') {
+      const mapWrapper = document.createElement('div');
+      mapWrapper.style.marginBottom = 'var(--sp-3)';
+      filesArea.appendChild(mapWrapper);
+      renderRendVsAsientoMappingPanel(mapWrapper, { openByDefault: true });
     }
   }
 
