@@ -21,9 +21,15 @@ const CUENTA_CONTAB_CATS = {
   '5208003': 'provMes',
 };
 
-// PROV. CCSS MES: (Σ DEBE−HABER de conceptos positivos) − (Σ DEBE−HABER de conceptos negativos)
+// PROV. CCSS MES: clasificación EXCLUSIVA por ID_CONCEPTO.
+// Estas 6 filas existen dentro de CUENTA_CONTAB 5208005 (CARGAS) pero conceptualmente
+// pertenecen a PROV. CCSS MES — NO se cuentan en CARGAS.
+// Los 3 "positivos" cargan al DEBE (3572, 3672, 7292) y los 3 "negativos" al HABER
+// (3576, 3676, 7289); al sumar (DEBE − HABER) de las 6 filas, los signos caen naturalmente
+// y el resultado equivale a (sum positivos) − (sum negativos).
 const PROV_CCSS_POS = new Set(['3572', '3672', '7292']);
 const PROV_CCSS_NEG = new Set(['3576', '3676', '7289']);
+const PROV_CCSS_ALL = new Set([...PROV_CCSS_POS, ...PROV_CCSS_NEG]);
 
 // Redirects de CC: Finanzas y Facilities en CONTA se suman a los CC equivalentes de Rendimiento
 const CC_REDIR = {
@@ -240,23 +246,17 @@ export function runRendVsAsiento(rendRows, _tabRows, mapping) {
       accountNames.set(cuentaCode, norm(row.n_cuenta_contable));
     }
 
-    // Clasificar por CUENTA_CONTAB → categorías PRECIO / ESTÍMULO / CARGAS / PROV. MES
-    const catByAccount = cuentaCode ? CUENTA_CONTAB_CATS[cuentaCode] : null;
-    if (catByAccount) {
-      g[catByAccount] += valor;
-    }
-
-    // Clasificar por ID_CONCEPTO → PROV. CCSS MES
+    // Clasificación EXCLUSIVA: si la fila es de un concepto de PROV. CCSS, va sólo
+    // a provCcss (no a CARGAS, aunque su CUENTA_CONTAB sea 5208005). El resto se
+    // clasifica por CUENTA_CONTAB.
     const concepto = norm(row.id_concepto);
-    const esProvCcssPos = PROV_CCSS_POS.has(concepto);
-    const esProvCcssNeg = PROV_CCSS_NEG.has(concepto);
-    if (esProvCcssPos) {
+    if (PROV_CCSS_ALL.has(concepto)) {
       g.provCcss += valor;
-    } else if (esProvCcssNeg) {
-      g.provCcss -= valor;
+    } else {
+      const catByAccount = cuentaCode ? CUENTA_CONTAB_CATS[cuentaCode] : null;
+      if (catByAccount) g[catByAccount] += valor;
+      else noCategorizadas++;
     }
-
-    if (!catByAccount && !esProvCcssPos && !esProvCcssNeg) noCategorizadas++;
   }
 
   // COSTO TOTAL por grupo = suma de las 5 categorías
