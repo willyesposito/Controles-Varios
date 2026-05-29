@@ -38,7 +38,14 @@ async function reloadList(root) {
   if (clients.length === 0) {
     container.innerHTML = `
       <div class="empty-state" style="max-width:680px;margin:0 auto;">
-        <div class="empty-state__icon">👋</div>
+        <div class="empty-state__icon" style="margin-bottom:var(--sp-3);">
+          <img
+            src="https://hidalgoyasociados.com.ar/wp-content/uploads/2023/10/ha-iso.png"
+            alt="Hidalgo &amp; Asociados"
+            width="64" height="64"
+            style="display:block;margin:0 auto;border-radius:50%;"
+            onerror="this.outerHTML='<div style=&quot;width:64px;height:64px;margin:0 auto;border-radius:50%;background:var(--color-primary);color:var(--color-white);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:22px;&quot;>H&amp;A</div>'">
+        </div>
         <div class="empty-state__title">Bienvenido a Controles Nómina</div>
         <p class="empty-state__text" style="margin-bottom:var(--sp-5);">
           Esta app cruza los archivos que te manda el cliente contra el Tabulado de nómina y

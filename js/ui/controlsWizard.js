@@ -97,9 +97,9 @@ export async function renderControlsWizard(root, clientId) {
         position:sticky;bottom:0;z-index:20;
         display:flex;justify-content:space-between;align-items:center;
         margin-top:var(--sp-3);padding:var(--sp-3) var(--sp-4);
-        background:rgba(255,255,255,0.95);backdrop-filter:blur(6px);
+        background:var(--color-surface);
         border:1px solid var(--color-border);border-radius:var(--radius-md);
-        box-shadow:0 -2px 8px rgba(0,0,0,0.06);
+        box-shadow:var(--shadow-md);
       "></div>
     </div>
   `;
@@ -259,40 +259,24 @@ function renderStepTab(container, state, root) {
     : `📂 Sin catálogo cargado — se usará el catálogo estándar (${CATALOGO_SEED.length} conceptos).`;
 
   container.innerHTML = `
-    <div style="display:flex;align-items:center;gap:var(--sp-2);margin:0 0 var(--sp-1);position:relative;">
-      <h3 style="margin:0;">Paso 1 — Tabulado estandarizado</h3>
-      <details style="flex-shrink:0;">
-        <summary style="
-          list-style:none;cursor:pointer;font-size:0.95em;
-          width:1.5em;height:1.5em;display:flex;align-items:center;justify-content:center;
-          border-radius:50%;border:1px solid var(--color-border);background:var(--color-bg);
-          color:var(--color-primary);user-select:none;
-        " title="¿Qué es el Tabulado?">ℹ</summary>
-        <div style="
-          position:absolute;z-index:10;margin-top:var(--sp-2);left:0;top:100%;
-          max-width:560px;width:90vw;
-          padding:var(--sp-4);background:var(--color-bg);
-          border:1px solid var(--color-border);border-radius:var(--radius-md);
-          box-shadow:0 4px 16px rgba(0,0,0,0.12);font-size:var(--text-sm);
-        ">
-          <p style="margin:0 0 var(--sp-3);font-weight:var(--fw-semibold);">¿Qué es el Tabulado?</p>
-          <p style="margin:0 0 var(--sp-3);">
-            Es el archivo Excel que exporta el sistema de nómina del cliente con
-            <strong>una fila por empleado</strong> y <strong>una columna por concepto</strong>
-            (sueldo, asignaciones, aportes, contribuciones, etc.). Es el "estado de cuenta"
-            del mes que vamos a auditar.
-          </p>
-          <p style="margin:0 0 var(--sp-2);font-weight:var(--fw-semibold);">¿Por qué es central?</p>
-          <p style="margin:0;">
-            Todos los controles lo usan como base. Los demás archivos (Brutos, NR, Rendimiento)
-            se cruzan contra el Tabulado para detectar diferencias.
-          </p>
-        </div>
-      </details>
-    </div>
-    <p class="text-muted" style="margin:0 0 var(--sp-3);font-size:var(--text-sm);">
+    <h3 style="margin:0 0 var(--sp-1);">Paso 1 — Tabulado estandarizado</h3>
+    <p class="text-muted" style="margin:0 0 var(--sp-2);font-size:var(--text-sm);">
       Este archivo es la base para todos los controles. Se carga una vez por sesión y se comparte entre los controles.
     </p>
+    ${infoBubble('¿Qué es un Tabulado?', `
+      <p style="margin:0 0 var(--sp-3);font-weight:var(--fw-semibold);">¿Qué es el Tabulado?</p>
+      <p style="margin:0 0 var(--sp-3);">
+        Es el archivo Excel que exporta el sistema de nómina del cliente con
+        <strong>una fila por empleado</strong> y <strong>una columna por concepto</strong>
+        (sueldo, asignaciones, aportes, contribuciones, etc.). Es el "estado de cuenta"
+        del mes que vamos a auditar.
+      </p>
+      <p style="margin:0 0 var(--sp-2);font-weight:var(--fw-semibold);">¿Por qué es central?</p>
+      <p style="margin:0;">
+        Todos los controles lo usan como base. Los demás archivos (Brutos, NR, Rendimiento)
+        se cruzan contra el Tabulado para detectar diferencias.
+      </p>
+    `)}
 
     <details style="margin-bottom:var(--sp-3);" ${state.catalog ? '' : 'open'}>
       <summary style="
@@ -304,66 +288,48 @@ function renderStepTab(container, state, root) {
       </summary>
       <div style="margin-top:var(--sp-2);padding:var(--sp-3);background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);">
 
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:var(--sp-3);margin-bottom:var(--sp-2);position:relative;">
-          <p class="text-sm text-muted" style="margin:0;">
-            El catálogo define qué columnas del Tabulado corresponden a cada concepto y a qué controles
-            pertenecen. Si no cargás uno, se usa el catálogo estándar.
+        <p class="text-sm text-muted" style="margin:0 0 var(--sp-2);">
+          El catálogo define qué columnas del Tabulado corresponden a cada concepto y a qué controles
+          pertenecen. Si no cargás uno, se usa el catálogo estándar.
+        </p>
+        ${infoBubble('¿Qué es el Catálogo? ¿Cómo se arma?', `
+          <p style="margin:0 0 var(--sp-3);font-weight:var(--fw-semibold);">¿Qué es el Catálogo de Conceptos?</p>
+          <p style="margin:0 0 var(--sp-3);">
+            Es el mapa que conecta los <strong>nombres de columnas</strong> de los archivos del cliente
+            con los <strong>conceptos contables</strong> que la app conoce. Cargándolo una vez,
+            el auto-detect mejora notablemente y el análisis del Tabulado pasa a ser visible y accionable.
           </p>
-          <details style="flex-shrink:0;">
-            <summary style="
-              list-style:none;cursor:pointer;font-size:1.15em;
-              width:1.6em;height:1.6em;display:flex;align-items:center;justify-content:center;
-              border-radius:50%;border:1px solid var(--color-border);background:var(--color-bg);
-              color:var(--color-primary);user-select:none;
-            " title="¿Qué es el catálogo? ¿Para qué sirve?">ℹ</summary>
-            <div style="
-              position:absolute;z-index:10;margin-top:var(--sp-2);right:0;
-              max-width:560px;width:90vw;
-              max-height:60vh;overflow-y:scroll;
-              padding:var(--sp-5);background:var(--color-bg);
-              border:1px solid var(--color-border);border-radius:var(--radius-md);
-              box-shadow:0 4px 16px rgba(0,0,0,0.12);font-size:var(--text-sm);
-            ">
-              <p style="margin:0 0 var(--sp-4);font-weight:var(--fw-semibold);">¿Qué es el Catálogo de Conceptos?</p>
 
-              <p style="margin:0 0 var(--sp-3);">
-                Es el mapa que conecta los <strong>nombres de columnas</strong> de los archivos del cliente
-                con los <strong>conceptos contables</strong> que la app conoce. Cargándolo una vez,
-                el auto-detect mejora notablemente y el análisis del Tabulado pasa a ser visible y accionable.
-              </p>
+          <p style="margin:0 0 var(--sp-2);font-weight:var(--fw-semibold);">Estructura del archivo (.xlsx)</p>
+          <table style="width:100%;border-collapse:collapse;margin-bottom:var(--sp-4);">
+            <thead>
+              <tr style="background:var(--color-bg-subtle);">
+                <th style="padding:4px 8px;text-align:left;border:1px solid var(--color-border);">Columna</th>
+                <th style="padding:4px 8px;text-align:left;border:1px solid var(--color-border);">Requerida</th>
+                <th style="padding:4px 8px;text-align:left;border:1px solid var(--color-border);">Descripción</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td style="padding:4px 8px;border:1px solid var(--color-border);font-family:monospace;">CODIGO</td><td style="padding:4px 8px;border:1px solid var(--color-border);">Sí</td><td style="padding:4px 8px;border:1px solid var(--color-border);">Identificador canónico del concepto. Ej: <code>SAL_BASE</code>, <code>INDEM_PREAVISO</code></td></tr>
+              <tr><td style="padding:4px 8px;border:1px solid var(--color-border);font-family:monospace;">DESCRIPCION</td><td style="padding:4px 8px;border:1px solid var(--color-border);">Sí</td><td style="padding:4px 8px;border:1px solid var(--color-border);">Nombre humano. Ej: "Sueldo Base", "Indemnización por Preaviso"</td></tr>
+              <tr><td style="padding:4px 8px;border:1px solid var(--color-border);font-family:monospace;">CLASIFICACION</td><td style="padding:4px 8px;border:1px solid var(--color-border);">Sí</td><td style="padding:4px 8px;border:1px solid var(--color-border);">Uno de: <code>remu</code> · <code>no_remu</code> · <code>aporte</code> · <code>contribucion</code></td></tr>
+              <tr><td style="padding:4px 8px;border:1px solid var(--color-border);font-family:monospace;">CONTROLES</td><td style="padding:4px 8px;border:1px solid var(--color-border);">No</td><td style="padding:4px 8px;border:1px solid var(--color-border);">IDs de controles que usan este concepto, separados por <code>|</code>. Ej: <code>brutos|nr</code></td></tr>
+              <tr><td style="padding:4px 8px;border:1px solid var(--color-border);font-family:monospace;">ALIAS</td><td style="padding:4px 8px;border:1px solid var(--color-border);">No</td><td style="padding:4px 8px;border:1px solid var(--color-border);">Otros nombres con que aparece la columna en archivos del cliente, separados por <code>|</code>. Ej: <code>sueldo|1003-|sal base</code></td></tr>
+            </tbody>
+          </table>
 
-              <p style="margin:0 0 var(--sp-2);font-weight:var(--fw-semibold);">Estructura del archivo (.xlsx)</p>
-              <table style="width:100%;border-collapse:collapse;margin-bottom:var(--sp-4);">
-                <thead>
-                  <tr style="background:var(--color-surface);">
-                    <th style="padding:4px 8px;text-align:left;border:1px solid var(--color-border);">Columna</th>
-                    <th style="padding:4px 8px;text-align:left;border:1px solid var(--color-border);">Requerida</th>
-                    <th style="padding:4px 8px;text-align:left;border:1px solid var(--color-border);">Descripción</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr><td style="padding:4px 8px;border:1px solid var(--color-border);font-family:monospace;">CODIGO</td><td style="padding:4px 8px;border:1px solid var(--color-border);">Sí</td><td style="padding:4px 8px;border:1px solid var(--color-border);">Identificador canónico del concepto. Ej: <code>SAL_BASE</code>, <code>INDEM_PREAVISO</code></td></tr>
-                  <tr><td style="padding:4px 8px;border:1px solid var(--color-border);font-family:monospace;">DESCRIPCION</td><td style="padding:4px 8px;border:1px solid var(--color-border);">Sí</td><td style="padding:4px 8px;border:1px solid var(--color-border);">Nombre humano. Ej: "Sueldo Base", "Indemnización por Preaviso"</td></tr>
-                  <tr><td style="padding:4px 8px;border:1px solid var(--color-border);font-family:monospace;">CLASIFICACION</td><td style="padding:4px 8px;border:1px solid var(--color-border);">Sí</td><td style="padding:4px 8px;border:1px solid var(--color-border);">Uno de: <code>remu</code> · <code>no_remu</code> · <code>aporte</code> · <code>contribucion</code></td></tr>
-                  <tr><td style="padding:4px 8px;border:1px solid var(--color-border);font-family:monospace;">CONTROLES</td><td style="padding:4px 8px;border:1px solid var(--color-border);">No</td><td style="padding:4px 8px;border:1px solid var(--color-border);">IDs de controles que usan este concepto, separados por <code>|</code>. Ej: <code>brutos|nr</code></td></tr>
-                  <tr><td style="padding:4px 8px;border:1px solid var(--color-border);font-family:monospace;">ALIAS</td><td style="padding:4px 8px;border:1px solid var(--color-border);">No</td><td style="padding:4px 8px;border:1px solid var(--color-border);">Otros nombres con que aparece la columna en archivos del cliente, separados por <code>|</code>. Ej: <code>sueldo|1003-|sal base</code></td></tr>
-                </tbody>
-              </table>
+          <p style="margin:0 0 var(--sp-2);font-weight:var(--fw-semibold);">¿Qué se gana cargándolo?</p>
+          <ul style="margin:0 0 var(--sp-3);padding-left:var(--sp-5);line-height:1.6;">
+            <li><strong>Auto-detect mejorado:</strong> el sistema busca las columnas usando el código, todos sus alias, y también tolera variaciones de espacios, guiones y errores de tipeo de un carácter.</li>
+            <li><strong>Panel de análisis del Tabulado:</strong> después de cargar el Tabulado se muestra qué columnas fueron reconocidas, cuáles son "huérfanas" (no están en el catálogo) y cuáles se esperaban pero no aparecen en el archivo.</li>
+            <li><strong>Visibilidad de conceptos nuevos:</strong> si el cliente empieza a liquidar un concepto nuevo, aparecerá en "Huérfanas" y podés decidir si agregarlo al catálogo.</li>
+          </ul>
 
-              <p style="margin:0 0 var(--sp-2);font-weight:var(--fw-semibold);">¿Qué se gana cargándolo?</p>
-              <ul style="margin:0 0 var(--sp-3);padding-left:var(--sp-5);line-height:1.6;">
-                <li><strong>Auto-detect mejorado:</strong> el sistema busca las columnas usando el código, todos sus alias, y también tolera variaciones de espacios, guiones y errores de tipeo de un carácter.</li>
-                <li><strong>Panel de análisis del Tabulado:</strong> después de cargar el Tabulado se muestra qué columnas fueron reconocidas, cuáles son "huérfanas" (no están en el catálogo) y cuáles se esperaban pero no aparecen en el archivo.</li>
-                <li><strong>Visibilidad de conceptos nuevos:</strong> si el cliente empieza a liquidar un concepto nuevo, aparecerá en "Huérfanas" y podés decidir si agregarlo al catálogo.</li>
-              </ul>
-
-              <p style="margin:0;color:var(--color-text-muted);">
-                El catálogo se guarda por cliente. No hace falta cargarlo en cada sesión.
-                Si no cargás uno, la app usa el catálogo estándar (22 conceptos conocidos).
-              </p>
-            </div>
-          </details>
-        </div>
+          <p style="margin:0;color:var(--color-text-muted);">
+            El catálogo se guarda por cliente. No hace falta cargarlo en cada sesión.
+            Si no cargás uno, la app usa el catálogo estándar (22 conceptos conocidos).
+          </p>
+        `, { mb: 2 })}
 
         <div id="js-catalog-status" style="margin-bottom:var(--sp-2);">
           <div class="alert ${state.catalog ? 'alert--success' : 'alert--info'}" style="margin:0;padding:var(--sp-2) var(--sp-3);font-size:var(--text-sm);">
@@ -577,43 +543,27 @@ function renderStepControls(container, state, root) {
   }).join('');
 
   container.innerHTML = `
-    <div style="display:flex;align-items:center;gap:var(--sp-2);margin:0 0 var(--sp-1);position:relative;">
-      <h3 style="margin:0;">Paso 2 — Controles a ejecutar</h3>
-      <details style="flex-shrink:0;">
-        <summary style="
-          list-style:none;cursor:pointer;font-size:0.95em;
-          width:1.5em;height:1.5em;display:flex;align-items:center;justify-content:center;
-          border-radius:50%;border:1px solid var(--color-border);background:var(--color-bg);
-          color:var(--color-primary);user-select:none;
-        " title="¿Qué es un control?">ℹ</summary>
-        <div style="
-          position:absolute;z-index:10;margin-top:var(--sp-2);left:0;top:100%;
-          max-width:560px;width:90vw;
-          padding:var(--sp-4);background:var(--color-bg);
-          border:1px solid var(--color-border);border-radius:var(--radius-md);
-          box-shadow:0 4px 16px rgba(0,0,0,0.12);font-size:var(--text-sm);
-        ">
-          <p style="margin:0 0 var(--sp-3);font-weight:var(--fw-semibold);">¿Qué es un control?</p>
-          <p style="margin:0 0 var(--sp-3);">
-            Cada control es un cruce automático entre el Tabulado y otro archivo del cliente
-            (o entre filas del propio Tabulado). El sistema marca las diferencias por empleado
-            y devuelve un Excel con el detalle.
-          </p>
-          <p style="margin:0 0 var(--sp-2);font-weight:var(--fw-semibold);">Ejemplos</p>
-          <ul style="margin:0;padding-left:var(--sp-5);line-height:1.6;">
-            <li><strong>Brutos:</strong> compara el sueldo del Tabulado con el del reporte de Brutos.</li>
-            <li><strong>RendvsTabu:</strong> compara los conceptos del Tabulado con el reporte de Rendimiento por centro de costo.</li>
-            <li><strong>Cat x Empleados:</strong> verifica que cada empleado del Tabulado esté activo en el Catálogo de Empleados.</li>
-          </ul>
-          <p class="text-muted" style="margin:var(--sp-3) 0 0;font-size:0.9em;">
-            Abrí "¿Qué hace cada control?" más abajo para ver la ficha completa de cada uno.
-          </p>
-        </div>
-      </details>
-    </div>
-    <p class="text-muted" style="margin:0 0 var(--sp-3);font-size:var(--text-sm);">
+    <h3 style="margin:0 0 var(--sp-1);">Paso 2 — Controles a ejecutar</h3>
+    <p class="text-muted" style="margin:0 0 var(--sp-2);font-size:var(--text-sm);">
       Seleccioná los controles que querés ejecutar. Cada uno puede requerir cargar un archivo adicional.
     </p>
+    ${infoBubble('¿Qué es un control?', `
+      <p style="margin:0 0 var(--sp-3);font-weight:var(--fw-semibold);">¿Qué es un control?</p>
+      <p style="margin:0 0 var(--sp-3);">
+        Cada control es un cruce automático entre el Tabulado y otro archivo del cliente
+        (o entre filas del propio Tabulado). El sistema marca las diferencias por empleado
+        y devuelve un Excel con el detalle.
+      </p>
+      <p style="margin:0 0 var(--sp-2);font-weight:var(--fw-semibold);">Ejemplos</p>
+      <ul style="margin:0;padding-left:var(--sp-5);line-height:1.6;">
+        <li><strong>Brutos:</strong> compara el sueldo del Tabulado con el del reporte de Brutos.</li>
+        <li><strong>RendvsTabu:</strong> compara los conceptos del Tabulado con el reporte de Rendimiento por centro de costo.</li>
+        <li><strong>Cat x Empleados:</strong> verifica que cada empleado del Tabulado esté activo en el Catálogo de Empleados.</li>
+      </ul>
+      <p class="text-muted" style="margin:var(--sp-3) 0 0;font-size:0.9em;">
+        Abrí "¿Qué hace cada control?" más abajo para ver la ficha completa de cada uno.
+      </p>
+    `)}
 
     ${buildHelpSection()}
 
@@ -1114,9 +1064,43 @@ async function executeControls(state, statusEl) {
   }
 }
 
-// ── Helper ────────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function esc(str) {
   return String(str ?? '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// Genera un <details> de "info / tutorial" que se expande inline (empuja el contenido
+// hacia abajo en lugar de superponerse). Reemplaza el patrón anterior basado en
+// position:absolute que se solapaba con otros componentes.
+function infoBubble(label, contentHtml, { mb = 3 } = {}) {
+  return `
+    <details style="margin-bottom:var(--sp-${mb});">
+      <summary style="
+        cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:var(--sp-2);
+        padding:var(--sp-1) var(--sp-3);font-size:var(--text-sm);font-weight:var(--fw-semibold);
+        color:var(--color-primary);background:var(--color-surface);
+        border:1px solid var(--color-border);border-radius:var(--radius-full);
+        user-select:none;transition:background var(--transition);
+      ">
+        <span style="
+          display:inline-flex;align-items:center;justify-content:center;
+          width:18px;height:18px;border-radius:50%;
+          background:var(--color-primary);color:var(--color-white);
+          font-size:11px;font-weight:var(--fw-bold);
+        ">i</span>
+        ${esc(label)}
+      </summary>
+      <div style="
+        margin-top:var(--sp-2);padding:var(--sp-4);
+        background:var(--color-surface);
+        border:1px solid var(--color-border);border-radius:var(--radius-md);
+        box-shadow:var(--shadow-md);font-size:var(--text-sm);
+        color:var(--color-text);
+      ">
+        ${contentHtml}
+      </div>
+    </details>
+  `;
 }

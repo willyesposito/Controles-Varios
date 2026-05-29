@@ -44,15 +44,15 @@ export function renderTabuladoAnalysis(container, tabData, catalogRows, selected
   const nOrph = unrecognized.length;
   const nMiss = missing.length;
 
-  // Helper para badge de clasificación
+  // Helper para badge de clasificación — usa tokens semánticos que se adaptan a dark mode
   const classBadge = (clas) => {
     const colors = {
-      remu:          'background:#D1FAE5;color:#065F46;',
-      no_remu:       'background:#FEF3C7;color:#92400E;',
-      aporte:        'background:#DBEAFE;color:#1E40AF;',
-      contribucion:  'background:#EDE9FE;color:#5B21B6;',
+      remu:          'background:var(--color-success-bg);color:var(--color-success);',
+      no_remu:       'background:var(--color-warning-bg);color:var(--color-warning);',
+      aporte:        'background:var(--color-info-bg);color:var(--color-primary);',
+      contribucion:  'background:var(--color-match-saved-bg);color:var(--color-match-saved);',
     };
-    const style = colors[clas] || 'background:var(--color-surface);color:var(--color-text);';
+    const style = colors[clas] || 'background:var(--color-bg-subtle);color:var(--color-text);';
     return `<span style="font-size:0.7em;padding:1px 6px;border-radius:9999px;${style}">${esc(clas)}</span>`;
   };
 
@@ -60,7 +60,7 @@ export function renderTabuladoAnalysis(container, tabData, catalogRows, selected
   const stratBadge = (strategy) => {
     if (strategy === 'exact') return '<span style="color:var(--color-match-exact);font-size:0.75em;font-weight:600;">✓ exacto</span>';
     if (strategy === 'alias') return '<span style="color:var(--color-match-exact);font-size:0.75em;">↺ alias</span>';
-    if (strategy === 'fuzzy') return '<span style="color:#D97706;font-size:0.75em;">~ fuzzy</span>';
+    if (strategy === 'fuzzy') return '<span style="color:var(--color-warning);font-size:0.75em;">~ fuzzy</span>';
     return '';
   };
 
@@ -129,7 +129,7 @@ export function renderTabuladoAnalysis(container, tabData, catalogRows, selected
   const summaryCounts = `
     <span style="color:var(--color-match-exact);font-weight:600;">✓ ${nRec}</span>
     <span style="color:var(--color-text-muted);">·</span>
-    <span style="color:${nOrph > 0 ? '#B45309' : 'var(--color-text-muted)'};font-weight:${nOrph > 0 ? '600' : 'normal'};">⚠ ${nOrph} huérfanas</span>
+    <span style="color:${nOrph > 0 ? 'var(--color-warning)' : 'var(--color-text-muted)'};font-weight:${nOrph > 0 ? '600' : 'normal'};">⚠ ${nOrph} huérfanas</span>
     <span style="color:var(--color-text-muted);">·</span>
     <span style="color:${nMiss > 0 ? 'var(--color-danger)' : 'var(--color-text-muted)'};font-weight:${nMiss > 0 ? '600' : 'normal'};">✗ ${nMiss} faltantes</span>
   `;
@@ -159,7 +159,7 @@ export function renderTabuladoAnalysis(container, tabData, catalogRows, selected
 
         ${nOrph > 0 ? `
         <details open>
-          <summary style="cursor:pointer;font-size:var(--text-sm);font-weight:var(--fw-semibold);list-style:none;display:flex;gap:var(--sp-2);align-items:center;color:#B45309;">
+          <summary style="cursor:pointer;font-size:var(--text-sm);font-weight:var(--fw-semibold);list-style:none;display:flex;gap:var(--sp-2);align-items:center;color:var(--color-warning);">
             <span>▾</span> ⚠ Huérfanas (${nOrph}) <span style="color:var(--color-text-muted);font-weight:400;font-size:0.85em;">— no están en el catálogo</span>
           </summary>
           <div style="margin-top:var(--sp-2);overflow-x:auto;">${orphHtml}</div>

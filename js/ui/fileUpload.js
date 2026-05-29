@@ -408,14 +408,14 @@ function renderMappingForm(container, { headers, preview, fileType, savedMapping
   const fieldStyle = (level) => {
     if (level === 'exact') return 'border-color:var(--color-match-exact);background:var(--color-match-exact-bg);';
     if (level === 'saved') return 'border-color:var(--color-match-saved);background:var(--color-match-saved-bg);';
-    if (level === 'warn')  return 'border-color:#EAB308;background:rgba(234,179,8,0.08);';
+    if (level === 'warn')  return 'border-color:var(--color-warning);background:var(--color-warning-bg);';
     return '';
   };
 
   const fieldBadge = (level) => {
     if (level === 'exact') return ' <span style="color:var(--color-match-exact);font-size:0.75em;font-weight:600;">✓ auto</span>';
     if (level === 'saved') return ' <span style="color:var(--color-match-saved);font-size:0.75em;">↺ sesión anterior</span>';
-    if (level === 'warn')  return ' <span style="color:#B45309;font-size:0.8em;">⚠ sin asignar</span>';
+    if (level === 'warn')  return ' <span style="color:var(--color-warning);font-size:0.8em;">⚠ sin asignar</span>';
     return '';
   };
 
