@@ -259,23 +259,26 @@ export const CONTROL_REGISTRY = {
   rend_vs_asiento: {
     id:          'rend_vs_asiento',
     label:       'Rendimiento vs Asiento',
-    description: 'Cruza el Reporte de Rendimiento de M4 contra el Asiento Contable. '
-      + 'Verifica que los importes de cada categoría coincidan con las líneas del Asiento.',
+    description: 'Cruza el Reporte de Rendimiento de M4 contra la Contabilidad Desglosada (CONTA). '
+      + 'Agrupa CONTA por CC × categoría (Σ Debe − Σ Haber) y compara contra el Rendimiento.',
     help: {
       what: 'Toma el Reporte de Rendimiento (resumen de costos por CC de M4) y lo contrasta '
-        + 'contra el Asiento Contable correspondiente al período. '
-        + 'Detecta diferencias entre lo registrado en nómina y lo contabilizado.',
+        + 'contra la Contabilidad Desglosada. Cada fila de CONTA se clasifica por ID_CONCEPTO en '
+        + 'PRECIO / ASIG. ESTÍMULO / CARGAS SS / PROV. MES / PROV. CCSS MES, se suma DEBE − HABER '
+        + 'y se agrupa por CC_NOMBRE. Opcionalmente se puede sobrescribir el CC con un archivo '
+        + 'CC x Empleado (cuando los CC de CONTA están desactualizados).',
       how: [
         'Bajá el Reporte de Rendimiento de M4.',
-        'Bajá o exportá el Asiento Contable del período.',
-        'Cargalos cuando te los pida en el Paso 2.',
-        'Ejecutá. Las diferencias se muestran en rojo.',
+        'Bajá o exportá la Contabilidad Desglosada del período.',
+        '(Opcional) cargá el archivo CC x Empleado si los CC de CONTA están desactualizados.',
+        'Ejecutá. Las diferencias (CONTA − Rend) se muestran en rojo.',
       ],
     },
     tabRequired: false,
     additionalFiles: [
-      { key: 'rend',    label: 'Reporte de Rendimiento', fileType: 'rend_file' },
-      { key: 'asiento', label: 'Asiento Contable',       fileType: 'asiento_file' },
+      { key: 'rend',  label: 'Reporte de Rendimiento',          fileType: 'rend_file' },
+      { key: 'conta', label: 'Contabilidad Desglosada',         fileType: 'conta_file' },
+      { key: 'ccXEe', label: 'CC x Empleado (opcional)',         fileType: 'cc_x_ee_file', optional: true },
     ],
     run:           runRendVsAsiento,
     summarize:     summarizeRendVsAsiento,
