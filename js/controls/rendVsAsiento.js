@@ -889,46 +889,56 @@ function dateSuffix() {
 const DETAIL_CAT_ORDER = COLS.filter(c => c.key !== 'total').map(c => c.label);
 
 /**
- * Pestaña "Desglose por Categoría" — totales rolled-up por CC × Cuenta × Concepto,
- * agrupados por categoría. Ideal para mandar al cliente: cada bloque de categoría
- * cierra con su subtotal y al final hay un total general.
+ * Construye el rollup CC × Cat × (Cuenta, Concepto) desde el detalle plano.
+ * Devuelve un Map: cc → Map(cat → array de filas rolled-up ordenadas).
  */
-function addDesgloseSheet(wb, detalle) {
-  // Rollup: clave = categoria|cc|cuenta|concepto
-  const rollup = new Map();
+function buildCcCatRollup(detalle) {
+  const byCC = new Map();
   for (const d of detalle) {
-    const key = `${d.categoria}|${d.ccRendimiento}|${d.cuentaContab}|${d.idConcepto}`;
-    let r = rollup.get(key);
+    if (!byCC.has(d.ccRendimiento)) byCC.set(d.ccRendimiento, new Map());
+    const byCat = byCC.get(d.ccRendimiento);
+    if (!byCat.has(d.categoria)) byCat.set(d.categoria, new Map());
+    const byKey = byCat.get(d.categoria);
+    const k = `${d.cuentaContab}|${d.idConcepto}`;
+    let r = byKey.get(k);
     if (!r) {
       r = {
-        categoria:       d.categoria,
-        ccRendimiento:   d.ccRendimiento,
         cuentaContab:    d.cuentaContab,
         nCuentaContable: d.nCuentaContable,
         idConcepto:      d.idConcepto,
         nombreLargo:     d.nombreLargo,
         debe: 0, haber: 0, neto: 0, filas: 0,
       };
-      rollup.set(key, r);
+      byKey.set(k, r);
     }
-    r.debe  += d.debe;
-    r.haber += d.haber;
-    r.neto  += d.neto;
-    r.filas++;
+    r.debe += d.debe; r.haber += d.haber; r.neto += d.neto; r.filas++;
   }
+  // Reemplazar Map(key→row) por array ordenado
+  for (const [, byCat] of byCC) {
+    for (const [cat, byKey] of byCat) {
+      const arr = [...byKey.values()].sort((a, b) =>
+        a.cuentaContab.localeCompare(b.cuentaContab, 'es') ||
+        a.idConcepto.localeCompare(b.idConcepto, 'es')
+      );
+      byCat.set(cat, arr);
+    }
+  }
+  return byCC;
+}
 
-  const sorted = [...rollup.values()].sort((a, b) => {
-    const ca = DETAIL_CAT_ORDER.indexOf(a.categoria);
-    const cb = DETAIL_CAT_ORDER.indexOf(b.categoria);
-    if (ca !== cb) return ca - cb;
-    return a.ccRendimiento.localeCompare(b.ccRendimiento, 'es')
-        || a.cuentaContab.localeCompare(b.cuentaContab, 'es')
-        || a.idConcepto.localeCompare(b.idConcepto, 'es');
-  });
+/**
+ * Pestaña "Desglose por CC" — rolled-up por CC × Categoría × Cuenta × Concepto.
+ * Empieza con cada CC mostrando todas sus categorías (PRECIO, ASIG, CARGAS, PROV, PROV CCSS),
+ * con subtotal por categoría dentro del CC, total por CC y total general al final.
+ * Los totalizadores son FÓRMULAS de Excel (SUM) — así parece hecho a mano.
+ */
+function addDesglosePorCcSheet(wb, detalle) {
+  const byCC = buildCcCatRollup(detalle);
+  const sortedCCs = [...byCC.keys()].sort((a, b) => a.localeCompare(b, 'es'));
 
-  const ws = wb.addWorksheet('Desglose por Categoría');
+  const ws = wb.addWorksheet('Desglose por CC');
   ws.columns = [
-    { width: 22 }, { width: 28 }, { width: 16 }, { width: 28 },
+    { width: 22 }, { width: 18 }, { width: 16 }, { width: 28 },
     { width: 14 }, { width: 28 }, { width: 16 }, { width: 16 }, { width: 16 }, { width: 8 },
   ];
 
@@ -939,7 +949,7 @@ function addDesgloseSheet(wb, detalle) {
 
   // Header
   const hdr = ws.addRow([
-    'Categoría', 'CC Rendimiento', 'CUENTA_CONTAB', 'N_CUENTA_CONTABLE',
+    'CC Rendimiento', 'Categoría', 'CUENTA_CONTAB', 'N_CUENTA_CONTABLE',
     'ID_CONCEPTO', 'NOMBRE_LARGO', 'DEBE', 'HABER', 'NETO', 'Filas',
   ]);
   hdr.font = { ...bold };
@@ -949,47 +959,108 @@ function addDesgloseSheet(wb, detalle) {
     cell.border = { bottom: { style: 'medium', color: { argb: 'FFB0B0B0' } } };
   });
 
-  // Filas por categoría con subtotales
-  let currentCat = null;
-  let catTotals = { debe: 0, haber: 0, neto: 0, filas: 0 };
-  let grandTotal = { debe: 0, haber: 0, neto: 0, filas: 0 };
+  // Helper: arma la fórmula SUM con un rango de filas + las columnas numéricas
+  const sumRange = (col, fromRow, toRow) => `SUM(${col}${fromRow}:${col}${toRow})`;
+  const sumRefs  = (col, rowNums) => `SUM(${rowNums.map(r => `${col}${r}`).join(',')})`;
 
-  const writeCatSubtotal = (cat, t) => {
-    const r = ws.addRow([`Subtotal ${cat}`, '', '', '', '', '', t.debe, t.haber, t.neto, t.filas]);
-    r.eachCell((cell, col) => {
-      cell.font = { ...bold };
-      cell.fill = solidFill('FFEEEEEE');
-      if (col >= 7 && col <= 9) cell.numFmt = numFmt;
-      if (col >= 7) cell.alignment = { horizontal: 'right' };
-    });
-    ws.addRow([]);  // blank separator
-  };
+  let currentRow = 1;  // fila 1 = header
+  const ccTotalRowNums = [];
 
-  for (const r of sorted) {
-    if (currentCat && currentCat !== r.categoria) {
-      writeCatSubtotal(currentCat, catTotals);
-      catTotals = { debe: 0, haber: 0, neto: 0, filas: 0 };
+  for (const cc of sortedCCs) {
+    const byCat = byCC.get(cc);
+    const sortedCats = [...byCat.keys()].sort((a, b) =>
+      DETAIL_CAT_ORDER.indexOf(a) - DETAIL_CAT_ORDER.indexOf(b)
+    );
+    const catSubtotalRowNums = [];
+
+    for (const cat of sortedCats) {
+      const rolled = byCat.get(cat);
+      const catFirstDataRow = currentRow + 1;
+
+      for (const rr of rolled) {
+        const dr = ws.addRow([
+          cc, cat, rr.cuentaContab, rr.nCuentaContable,
+          rr.idConcepto, rr.nombreLargo,
+          rr.debe, rr.haber, rr.neto, rr.filas,
+        ]);
+        dr.eachCell((cell, col) => {
+          cell.font = { ...base };
+          if (col >= 7 && col <= 9) cell.numFmt = numFmt;
+          if (col >= 7) cell.alignment = { horizontal: 'right' };
+        });
+        currentRow++;
+      }
+
+      const catLastDataRow = currentRow;
+      // Subtotal por categoría (dentro del CC) con fórmulas
+      const subDebe  = rolled.reduce((s, r) => s + r.debe, 0);
+      const subHaber = rolled.reduce((s, r) => s + r.haber, 0);
+      const subNeto  = rolled.reduce((s, r) => s + r.neto, 0);
+      const subFilas = rolled.reduce((s, r) => s + r.filas, 0);
+
+      const sub = ws.addRow([
+        '', `Subtotal ${cat}`, '', '', '', '',
+        { formula: sumRange('G', catFirstDataRow, catLastDataRow), result: subDebe },
+        { formula: sumRange('H', catFirstDataRow, catLastDataRow), result: subHaber },
+        { formula: sumRange('I', catFirstDataRow, catLastDataRow), result: subNeto },
+        { formula: sumRange('J', catFirstDataRow, catLastDataRow), result: subFilas },
+      ]);
+      sub.eachCell((cell, col) => {
+        cell.font = { ...bold };
+        cell.fill = solidFill('FFF5F5F5');
+        if (col >= 7 && col <= 9) cell.numFmt = numFmt;
+        if (col >= 7) cell.alignment = { horizontal: 'right' };
+      });
+      currentRow++;
+      catSubtotalRowNums.push(currentRow);
     }
-    currentCat = r.categoria;
 
-    const dataRow = ws.addRow([
-      r.categoria, r.ccRendimiento, r.cuentaContab, r.nCuentaContable,
-      r.idConcepto, r.nombreLargo, r.debe, r.haber, r.neto, r.filas,
+    // Total por CC (suma de los subtotales por categoría)
+    const ccDebe  = catSubtotalRowNums.length > 0
+      ? sortedCats.reduce((s, c) => s + byCat.get(c).reduce((ss, r) => ss + r.debe, 0), 0)
+      : 0;
+    const ccHaber = sortedCats.reduce((s, c) => s + byCat.get(c).reduce((ss, r) => ss + r.haber, 0), 0);
+    const ccNeto  = sortedCats.reduce((s, c) => s + byCat.get(c).reduce((ss, r) => ss + r.neto, 0), 0);
+    const ccFilas = sortedCats.reduce((s, c) => s + byCat.get(c).reduce((ss, r) => ss + r.filas, 0), 0);
+
+    const ccTotal = ws.addRow([
+      `Total ${cc}`, '', '', '', '', '',
+      { formula: sumRefs('G', catSubtotalRowNums), result: ccDebe },
+      { formula: sumRefs('H', catSubtotalRowNums), result: ccHaber },
+      { formula: sumRefs('I', catSubtotalRowNums), result: ccNeto },
+      { formula: sumRefs('J', catSubtotalRowNums), result: ccFilas },
     ]);
-    dataRow.eachCell((cell, col) => {
-      cell.font = { ...base };
+    ccTotal.eachCell((cell, col) => {
+      cell.font = { ...bold };
+      cell.fill = solidFill('FFD0E4F5');
+      cell.border = { top: { style: 'thin', color: { argb: 'FF8FBADD' } } };
       if (col >= 7 && col <= 9) cell.numFmt = numFmt;
       if (col >= 7) cell.alignment = { horizontal: 'right' };
     });
+    currentRow++;
+    ccTotalRowNums.push(currentRow);
 
-    catTotals.debe += r.debe; catTotals.haber += r.haber; catTotals.neto += r.neto; catTotals.filas += r.filas;
-    grandTotal.debe += r.debe; grandTotal.haber += r.haber; grandTotal.neto += r.neto; grandTotal.filas += r.filas;
+    // Fila en blanco separadora entre CCs
+    ws.addRow([]);
+    currentRow++;
   }
 
-  if (currentCat) writeCatSubtotal(currentCat, catTotals);
+  // TOTAL GENERAL: suma de los totales por CC
+  let grandDebe = 0, grandHaber = 0, grandNeto = 0, grandFilas = 0;
+  for (const [, byCat] of byCC) {
+    for (const [, rolled] of byCat) {
+      for (const r of rolled) { grandDebe += r.debe; grandHaber += r.haber; grandNeto += r.neto; grandFilas += r.filas; }
+    }
+  }
 
-  const totalRow = ws.addRow(['TOTAL GENERAL', '', '', '', '', '', grandTotal.debe, grandTotal.haber, grandTotal.neto, grandTotal.filas]);
-  totalRow.eachCell((cell, col) => {
+  const grand = ws.addRow([
+    'TOTAL GENERAL', '', '', '', '', '',
+    { formula: sumRefs('G', ccTotalRowNums), result: grandDebe },
+    { formula: sumRefs('H', ccTotalRowNums), result: grandHaber },
+    { formula: sumRefs('I', ccTotalRowNums), result: grandNeto },
+    { formula: sumRefs('J', ccTotalRowNums), result: grandFilas },
+  ]);
+  grand.eachCell((cell, col) => {
     cell.font = { ...bold };
     cell.fill = solidFill('FFDCDCDC');
     cell.border = { top: { style: 'medium', color: { argb: 'FF808080' } } };
@@ -999,65 +1070,6 @@ function addDesgloseSheet(wb, detalle) {
 
   ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 1 }];
   ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: 10 } };
-}
-
-/**
- * Pestaña "Detalle clasificado" — fila por fila de CONTA con la clasificación.
- * Diseñada para que el cliente pueda armar sus propias tablas dinámicas en Excel.
- */
-function addDetalleSheet(wb, detalle) {
-  const ws = wb.addWorksheet('Detalle clasificado');
-  ws.columns = [
-    { width: 22 }, { width: 22 }, { width: 22 },  // CC Rend / CC Original / Categoría
-    { width: 16 }, { width: 28 },                  // Cuenta / N_Cuenta
-    { width: 14 }, { width: 28 },                  // Concepto / Nombre largo
-    { width: 14 },                                  // ID_EMPLEADO
-    { width: 16 }, { width: 16 }, { width: 16 },  // DEBE / HABER / NETO
-  ];
-
-  const solidFill = argb => ({ type: 'pattern', pattern: 'solid', fgColor: { argb } });
-  const base = { name: 'Calibri', size: 10 };
-  const bold = { ...base, bold: true };
-  const numFmt = '#,##0.00';
-
-  const hdr = ws.addRow([
-    'CC Rendimiento', 'CC Original CONTA', 'Categoría',
-    'CUENTA_CONTAB', 'N_CUENTA_CONTABLE',
-    'ID_CONCEPTO', 'NOMBRE_LARGO',
-    'ID_EMPLEADO', 'DEBE', 'HABER', 'NETO',
-  ]);
-  hdr.font = { ...bold };
-  hdr.eachCell(cell => {
-    cell.fill = solidFill('FFE0E0E0');
-    cell.alignment = { horizontal: 'center', vertical: 'middle' };
-    cell.border = { bottom: { style: 'medium', color: { argb: 'FFB0B0B0' } } };
-  });
-
-  const sorted = [...detalle].sort((a, b) => {
-    const ca = DETAIL_CAT_ORDER.indexOf(a.categoria);
-    const cb = DETAIL_CAT_ORDER.indexOf(b.categoria);
-    return a.ccRendimiento.localeCompare(b.ccRendimiento, 'es')
-        || (ca - cb)
-        || a.cuentaContab.localeCompare(b.cuentaContab, 'es')
-        || a.idConcepto.localeCompare(b.idConcepto, 'es')
-        || a.idEmpleado.localeCompare(b.idEmpleado, 'es');
-  });
-
-  for (const d of sorted) {
-    const dr = ws.addRow([
-      d.ccRendimiento, d.ccOriginal, d.categoria,
-      d.cuentaContab, d.nCuentaContable,
-      d.idConcepto, d.nombreLargo,
-      d.idEmpleado, d.debe, d.haber, d.neto,
-    ]);
-    dr.eachCell((cell, col) => {
-      cell.font = { ...base };
-      if (col >= 9) { cell.numFmt = numFmt; cell.alignment = { horizontal: 'right' }; }
-    });
-  }
-
-  ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 1 }];
-  ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: 11 } };
 }
 
 async function exportRendVsAsientoToXlsx(results) {
@@ -1140,14 +1152,31 @@ async function exportRendVsAsientoToXlsx(results) {
     if (r.sinContaData) dr.eachCell(cell => { cell.font = { ...cell.font, color: { argb: 'FF999999' } }; });
   }
 
+  // TOTAL GENERAL con fórmulas SUM (más auditable para el cliente que valores hardcoded)
   const totals = {};
   for (const c of COLS) { totals[c.rKey] = 0; totals[c.cKey] = 0; }
   for (const r of rows) {
     for (const c of COLS) { totals[c.rKey] += r[c.rKey] ?? 0; totals[c.cKey] += r[c.cKey] ?? 0; }
   }
-  const tr = ws.addRow(['TOTAL GENERAL', '', ...COLS.flatMap(c => {
+
+  // Las filas de datos van de Excel row 3 (después del header de 2 filas) a 3+rows.length-1
+  const firstDataRow = 3;
+  const lastDataRow  = 2 + rows.length;
+  const colLetter = n => {
+    let s = '', k = n;
+    while (k > 0) { const r = (k - 1) % 26; s = String.fromCharCode(65 + r) + s; k = Math.floor((k - 1) / 26); }
+    return s;
+  };
+  const sumFormula = colN => ({ formula: `SUM(${colLetter(colN)}${firstDataRow}:${colLetter(colN)}${lastDataRow})` });
+
+  const tr = ws.addRow(['TOTAL GENERAL', '', ...COLS.flatMap((c, i) => {
+    const startCol = 3 + i * 3;
     const d = totals[c.cKey] - totals[c.rKey];
-    return [totals[c.rKey], totals[c.cKey], d];
+    return [
+      { ...sumFormula(startCol),     result: totals[c.rKey] },
+      { ...sumFormula(startCol + 1), result: totals[c.cKey] },
+      { ...sumFormula(startCol + 2), result: d },
+    ];
   })]);
   tr.getCell(1).font = { ...bold };
   COLS.forEach((c, i) => {
@@ -1164,10 +1193,9 @@ async function exportRendVsAsientoToXlsx(results) {
     if (Math.abs(d) > 0.01) tr.getCell(startCol + 2).font = { ...bold, color: { argb: RED } };
   });
 
-  // ── Pestaña: Desglose por Categoría (rolled-up por CC × Cuenta × Concepto) ──
+  // ── Pestaña: Desglose por CC (rolled-up con subtotales por CC y categoría) ──
   if (detalle.length > 0) {
-    addDesgloseSheet(wb, detalle);
-    addDetalleSheet(wb, detalle);
+    addDesglosePorCcSheet(wb, detalle);
   }
 
   if (ccsSoloEnConta && ccsSoloEnConta.length > 0) {
