@@ -215,7 +215,11 @@ export function runRendVsAsiento(rendRows, _tabRows, mapping) {
   // ── Agrupar CONTA por CC × categoría ─────────────────────────────────────
   const contaGroups  = new Map();   // nameKey → bucket
   const accountNames = new Map();   // cuenta_contab code → N_CUENTA_CONTABLE
+  const detalle      = [];          // toda fila clasificada (para Excel de auditoría)
   let noCategorizadas = 0;
+
+  // Mapa categoría interna → label legible (para el detalle)
+  const CAT_LABEL = Object.fromEntries(COLS.map(c => [c.key, c.label]));
 
   for (const row of contaRows) {
     const empleado = norm(row.id_empleado);
@@ -229,9 +233,9 @@ export function runRendVsAsiento(rendRows, _tabRows, mapping) {
 
     // Aplicar redirect de CC (Finanzas → Servicios Legales, Facilities → Administración)
     const nameKey = CC_REDIR[origKey] ?? origKey;
+    const wasRedirected = nameKey !== origKey;
 
     if (!contaGroups.has(nameKey)) {
-      const wasRedirected = nameKey !== origKey;
       contaGroups.set(nameKey, {
         ccLabel: wasRedirected ? (CC_REDIR_LABEL[nameKey] ?? ccRaw) : ccRaw,
         precio: 0, estimulo: 0, cargas: 0, provMes: 0, provCcss: 0,
@@ -250,12 +254,34 @@ export function runRendVsAsiento(rendRows, _tabRows, mapping) {
     // a provCcss (no a CARGAS, aunque su CUENTA_CONTAB sea 5208005). El resto se
     // clasifica por CUENTA_CONTAB.
     const concepto = norm(row.id_concepto);
+    let catKey = null;
     if (PROV_CCSS_ALL.has(concepto)) {
+      catKey = 'provCcss';
       g.provCcss += valor;
     } else {
       const catByAccount = cuentaCode ? CUENTA_CONTAB_CATS[cuentaCode] : null;
-      if (catByAccount) g[catByAccount] += valor;
-      else noCategorizadas++;
+      if (catByAccount) {
+        catKey = catByAccount;
+        g[catByAccount] += valor;
+      } else {
+        noCategorizadas++;
+      }
+    }
+
+    if (catKey) {
+      detalle.push({
+        ccRendimiento:     g.ccLabel,
+        ccOriginal:        wasRedirected ? ccRaw : '',
+        categoria:         CAT_LABEL[catKey] || catKey,
+        cuentaContab:      cuentaCode,
+        nCuentaContable:   norm(row.n_cuenta_contable),
+        idConcepto:        concepto,
+        nombreLargo:       norm(row.nombre_largo),
+        idEmpleado:        empleado,
+        debe:              toNum(row.debe)  ?? 0,
+        haber:             toNum(row.haber) ?? 0,
+        neto:              valor,
+      });
     }
   }
 
@@ -338,7 +364,11 @@ export function runRendVsAsiento(rendRows, _tabRows, mapping) {
 
   return {
     summary, rows, ccsSoloEnConta,
-    meta: { accountNames: Object.fromEntries(accountNames), hasOverride },
+    meta: {
+      accountNames: Object.fromEntries(accountNames),
+      hasOverride,
+      detalle,  // todas las filas clasificadas — usadas por las pestañas Detalle/Desglose del export
+    },
   };
 }
 
@@ -662,15 +692,193 @@ function dateSuffix() {
   return new Date().toISOString().slice(0, 10).replace(/-/g, '');
 }
 
+// ── Pestañas adicionales del export ──────────────────────────────────────────
+
+// Orden canónico de categorías para Desglose / Detalle (mismo orden que COLS sin total)
+const DETAIL_CAT_ORDER = COLS.filter(c => c.key !== 'total').map(c => c.label);
+
+/**
+ * Pestaña "Desglose por Categoría" — totales rolled-up por CC × Cuenta × Concepto,
+ * agrupados por categoría. Ideal para mandar al cliente: cada bloque de categoría
+ * cierra con su subtotal y al final hay un total general.
+ */
+function addDesgloseSheet(wb, detalle) {
+  // Rollup: clave = categoria|cc|cuenta|concepto
+  const rollup = new Map();
+  for (const d of detalle) {
+    const key = `${d.categoria}|${d.ccRendimiento}|${d.cuentaContab}|${d.idConcepto}`;
+    let r = rollup.get(key);
+    if (!r) {
+      r = {
+        categoria:       d.categoria,
+        ccRendimiento:   d.ccRendimiento,
+        cuentaContab:    d.cuentaContab,
+        nCuentaContable: d.nCuentaContable,
+        idConcepto:      d.idConcepto,
+        nombreLargo:     d.nombreLargo,
+        debe: 0, haber: 0, neto: 0, filas: 0,
+      };
+      rollup.set(key, r);
+    }
+    r.debe  += d.debe;
+    r.haber += d.haber;
+    r.neto  += d.neto;
+    r.filas++;
+  }
+
+  const sorted = [...rollup.values()].sort((a, b) => {
+    const ca = DETAIL_CAT_ORDER.indexOf(a.categoria);
+    const cb = DETAIL_CAT_ORDER.indexOf(b.categoria);
+    if (ca !== cb) return ca - cb;
+    return a.ccRendimiento.localeCompare(b.ccRendimiento, 'es')
+        || a.cuentaContab.localeCompare(b.cuentaContab, 'es')
+        || a.idConcepto.localeCompare(b.idConcepto, 'es');
+  });
+
+  const ws = wb.addWorksheet('Desglose por Categoría');
+  ws.columns = [
+    { width: 22 }, { width: 28 }, { width: 16 }, { width: 28 },
+    { width: 14 }, { width: 28 }, { width: 16 }, { width: 16 }, { width: 16 }, { width: 8 },
+  ];
+
+  const solidFill = argb => ({ type: 'pattern', pattern: 'solid', fgColor: { argb } });
+  const base = { name: 'Calibri', size: 10 };
+  const bold = { ...base, bold: true };
+  const numFmt = '#,##0.00';
+
+  // Header
+  const hdr = ws.addRow([
+    'Categoría', 'CC Rendimiento', 'CUENTA_CONTAB', 'N_CUENTA_CONTABLE',
+    'ID_CONCEPTO', 'NOMBRE_LARGO', 'DEBE', 'HABER', 'NETO', 'Filas',
+  ]);
+  hdr.font = { ...bold };
+  hdr.eachCell(cell => {
+    cell.fill = solidFill('FFE0E0E0');
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.border = { bottom: { style: 'medium', color: { argb: 'FFB0B0B0' } } };
+  });
+
+  // Filas por categoría con subtotales
+  let currentCat = null;
+  let catTotals = { debe: 0, haber: 0, neto: 0, filas: 0 };
+  let grandTotal = { debe: 0, haber: 0, neto: 0, filas: 0 };
+
+  const writeCatSubtotal = (cat, t) => {
+    const r = ws.addRow([`Subtotal ${cat}`, '', '', '', '', '', t.debe, t.haber, t.neto, t.filas]);
+    r.eachCell((cell, col) => {
+      cell.font = { ...bold };
+      cell.fill = solidFill('FFEEEEEE');
+      if (col >= 7 && col <= 9) cell.numFmt = numFmt;
+      if (col >= 7) cell.alignment = { horizontal: 'right' };
+    });
+    ws.addRow([]);  // blank separator
+  };
+
+  for (const r of sorted) {
+    if (currentCat && currentCat !== r.categoria) {
+      writeCatSubtotal(currentCat, catTotals);
+      catTotals = { debe: 0, haber: 0, neto: 0, filas: 0 };
+    }
+    currentCat = r.categoria;
+
+    const dataRow = ws.addRow([
+      r.categoria, r.ccRendimiento, r.cuentaContab, r.nCuentaContable,
+      r.idConcepto, r.nombreLargo, r.debe, r.haber, r.neto, r.filas,
+    ]);
+    dataRow.eachCell((cell, col) => {
+      cell.font = { ...base };
+      if (col >= 7 && col <= 9) cell.numFmt = numFmt;
+      if (col >= 7) cell.alignment = { horizontal: 'right' };
+    });
+
+    catTotals.debe += r.debe; catTotals.haber += r.haber; catTotals.neto += r.neto; catTotals.filas += r.filas;
+    grandTotal.debe += r.debe; grandTotal.haber += r.haber; grandTotal.neto += r.neto; grandTotal.filas += r.filas;
+  }
+
+  if (currentCat) writeCatSubtotal(currentCat, catTotals);
+
+  const totalRow = ws.addRow(['TOTAL GENERAL', '', '', '', '', '', grandTotal.debe, grandTotal.haber, grandTotal.neto, grandTotal.filas]);
+  totalRow.eachCell((cell, col) => {
+    cell.font = { ...bold };
+    cell.fill = solidFill('FFDCDCDC');
+    cell.border = { top: { style: 'medium', color: { argb: 'FF808080' } } };
+    if (col >= 7 && col <= 9) cell.numFmt = numFmt;
+    if (col >= 7) cell.alignment = { horizontal: 'right' };
+  });
+
+  ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 1 }];
+  ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: 10 } };
+}
+
+/**
+ * Pestaña "Detalle clasificado" — fila por fila de CONTA con la clasificación.
+ * Diseñada para que el cliente pueda armar sus propias tablas dinámicas en Excel.
+ */
+function addDetalleSheet(wb, detalle) {
+  const ws = wb.addWorksheet('Detalle clasificado');
+  ws.columns = [
+    { width: 22 }, { width: 22 }, { width: 22 },  // CC Rend / CC Original / Categoría
+    { width: 16 }, { width: 28 },                  // Cuenta / N_Cuenta
+    { width: 14 }, { width: 28 },                  // Concepto / Nombre largo
+    { width: 14 },                                  // ID_EMPLEADO
+    { width: 16 }, { width: 16 }, { width: 16 },  // DEBE / HABER / NETO
+  ];
+
+  const solidFill = argb => ({ type: 'pattern', pattern: 'solid', fgColor: { argb } });
+  const base = { name: 'Calibri', size: 10 };
+  const bold = { ...base, bold: true };
+  const numFmt = '#,##0.00';
+
+  const hdr = ws.addRow([
+    'CC Rendimiento', 'CC Original CONTA', 'Categoría',
+    'CUENTA_CONTAB', 'N_CUENTA_CONTABLE',
+    'ID_CONCEPTO', 'NOMBRE_LARGO',
+    'ID_EMPLEADO', 'DEBE', 'HABER', 'NETO',
+  ]);
+  hdr.font = { ...bold };
+  hdr.eachCell(cell => {
+    cell.fill = solidFill('FFE0E0E0');
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.border = { bottom: { style: 'medium', color: { argb: 'FFB0B0B0' } } };
+  });
+
+  const sorted = [...detalle].sort((a, b) => {
+    const ca = DETAIL_CAT_ORDER.indexOf(a.categoria);
+    const cb = DETAIL_CAT_ORDER.indexOf(b.categoria);
+    return a.ccRendimiento.localeCompare(b.ccRendimiento, 'es')
+        || (ca - cb)
+        || a.cuentaContab.localeCompare(b.cuentaContab, 'es')
+        || a.idConcepto.localeCompare(b.idConcepto, 'es')
+        || a.idEmpleado.localeCompare(b.idEmpleado, 'es');
+  });
+
+  for (const d of sorted) {
+    const dr = ws.addRow([
+      d.ccRendimiento, d.ccOriginal, d.categoria,
+      d.cuentaContab, d.nCuentaContable,
+      d.idConcepto, d.nombreLargo,
+      d.idEmpleado, d.debe, d.haber, d.neto,
+    ]);
+    dr.eachCell((cell, col) => {
+      cell.font = { ...base };
+      if (col >= 9) { cell.numFmt = numFmt; cell.alignment = { horizontal: 'right' }; }
+    });
+  }
+
+  ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 1 }];
+  ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: 11 } };
+}
+
 async function exportRendVsAsientoToXlsx(results) {
   await loadExcelJS();
-  const { rows, ccsSoloEnConta } = results;
+  const { rows, ccsSoloEnConta, meta } = results;
+  const detalle = meta?.detalle || [];
 
   const wb = new window.ExcelJS.Workbook();
   wb.creator = 'H&A Controles Nómina';
   wb.created = new Date();
 
-  const ws = wb.addWorksheet('Rend vs CONTA');
+  const ws = wb.addWorksheet('Resumen');
 
   ws.columns = [
     { width: 10 }, { width: 30 },
@@ -684,7 +892,7 @@ async function exportRendVsAsientoToXlsx(results) {
   const RED     = 'FFCC0000';
   const GRAY_HDR = 'FFE0E0E0';
 
-  const r1 = ws.addRow(['CC', 'Centro de Costo', ...COLS.flatMap(c => [c.label, null, null])]);
+  const r1 = ws.addRow(['Código CC', 'Centro de Costo', ...COLS.flatMap(c => [c.label, null, null])]);
   r1.height = 22;
   ws.mergeCells('A1:A2');
   ws.mergeCells('B1:B2');
@@ -764,6 +972,12 @@ async function exportRendVsAsientoToXlsx(results) {
     const d = totals[c.cKey] - totals[c.rKey];
     if (Math.abs(d) > 0.01) tr.getCell(startCol + 2).font = { ...bold, color: { argb: RED } };
   });
+
+  // ── Pestaña: Desglose por Categoría (rolled-up por CC × Cuenta × Concepto) ──
+  if (detalle.length > 0) {
+    addDesgloseSheet(wb, detalle);
+    addDetalleSheet(wb, detalle);
+  }
 
   if (ccsSoloEnConta && ccsSoloEnConta.length > 0) {
     const ws2 = wb.addWorksheet('CCs sólo en CONTA');
