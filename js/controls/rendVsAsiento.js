@@ -10,37 +10,60 @@
 //   - Contabilidad Desglosada (CONTA) — obligatorio
 //   - CC x Empleado                   — opcional, sobrescribe CC_NOMBRE de CONTA
 
-// ── Clasificación por CUENTA_CONTAB ──────────────────────────────────────────
+// ── Configuración por defecto ────────────────────────────────────────────────
+//
+// Mapeo de CONTA → categorías del Rendimiento. Se puede sobrescribir por cliente
+// pasando `mapping.rvaConfig` con la misma estructura. La UI del wizard expone
+// un editor para que el usuario lo ajuste.
 
-const CUENTA_CONTAB_CATS = {
-  '5208001': 'precio',
-  '5208006': 'estimulo',
-  '5208005': 'cargas',
-  '5208007': 'provMes',
-  '5208004': 'provMes',
-  '5208003': 'provMes',
+export const DEFAULT_RVA_CONFIG = {
+  // CUENTA_CONTAB → categoría: arrays porque PROV. MES tiene varias
+  cuentaCats: {
+    precio:   ['5208001'],
+    estimulo: ['5208006'],
+    cargas:   ['5208005'],
+    provMes:  ['5208007', '5208004', '5208003'],
+  },
+  // PROV. CCSS MES: lista plana de ID_CONCEPTO. La fila va EXCLUSIVAMENTE a provCcss
+  // sumando (DEBE − HABER). Los signos salen naturalmente de DEBE/HABER en cada fila.
+  provCcssConcepts: ['3572', '3672', '7292', '3576', '3676', '7289'],
+  // Redirects de CC: nombres CONTA que se suman al CC equivalente de Rendimiento.
+  ccRedirects: [
+    { from: 'Finanzas',   to: 'Servicios Legales' },
+    { from: 'Facilities', to: 'Administración' },
+  ],
 };
 
-// PROV. CCSS MES: clasificación EXCLUSIVA por ID_CONCEPTO.
-// Estas 6 filas existen dentro de CUENTA_CONTAB 5208005 (CARGAS) pero conceptualmente
-// pertenecen a PROV. CCSS MES — NO se cuentan en CARGAS.
-// Los 3 "positivos" cargan al DEBE (3572, 3672, 7292) y los 3 "negativos" al HABER
-// (3576, 3676, 7289); al sumar (DEBE − HABER) de las 6 filas, los signos caen naturalmente
-// y el resultado equivale a (sum positivos) − (sum negativos).
-const PROV_CCSS_POS = new Set(['3572', '3672', '7292']);
-const PROV_CCSS_NEG = new Set(['3576', '3676', '7289']);
-const PROV_CCSS_ALL = new Set([...PROV_CCSS_POS, ...PROV_CCSS_NEG]);
+/**
+ * Construye índices rápidos desde la config para uso en runRendVsAsiento.
+ * Tolera config vacía/parcial.
+ */
+function buildIndexes(config) {
+  const cuentaToCat = new Map();
+  const provCcss    = new Set();
+  const ccRedir     = new Map();   // normKey → normKey
+  const ccRedirLbl  = new Map();   // normKey destino → label legible
 
-// Redirects de CC: Finanzas y Facilities en CONTA se suman a los CC equivalentes de Rendimiento
-const CC_REDIR = {
-  'finanzas':   'servicios legales',
-  'facilities': 'administracion',
-};
-// Nombres legibles de los CC destino (para la etiqueta cuando el grupo se crea con datos redirigidos)
-const CC_REDIR_LABEL = {
-  'servicios legales': 'Servicios Legales',
-  'administracion':    'Administración',
-};
+  for (const [catKey, codes] of Object.entries(config?.cuentaCats || {})) {
+    for (const code of (codes || [])) {
+      const c = String(code).trim();
+      if (c) cuentaToCat.set(c, catKey);
+    }
+  }
+  for (const code of (config?.provCcssConcepts || [])) {
+    const c = String(code).trim();
+    if (c) provCcss.add(c);
+  }
+  for (const { from, to } of (config?.ccRedirects || [])) {
+    const fk = normCCName(from);
+    const tk = normCCName(to);
+    if (fk && tk) {
+      ccRedir.set(fk, tk);
+      ccRedirLbl.set(tk, String(to).trim());
+    }
+  }
+  return { cuentaToCat, provCcss, ccRedir, ccRedirLbl };
+}
 
 // ── Definición de columnas comparadas ────────────────────────────────────────
 
@@ -59,21 +82,35 @@ const COLS = [
     hdr: 'rgba(64,64,64,0.18)',   bg: 'rgba(64,64,64,0.07)',   xlHdr: 'FFDCDCDC', xlBg: 'FFF2F2F2' },
 ];
 
-// Panel de mapeo: qué cuenta/concepto alimenta cada categoría
-export const ACCOUNT_MAP_DISPLAY = [
-  { cat: 'PRECIO',         entries: [{ code: '5208001', type: 'cuenta' }] },
-  { cat: 'ASIG. ESTÍMULO', entries: [{ code: '5208006', type: 'cuenta' }] },
-  { cat: 'CARGAS SS',      entries: [{ code: '5208005', type: 'cuenta' }] },
-  { cat: 'PROV. MES',      entries: [{ code: '5208007', type: 'cuenta' }, { code: '5208004', type: 'cuenta' }, { code: '5208003', type: 'cuenta' }] },
-  { cat: 'PROV. CCSS MES', entries: [
-    { code: '3572', type: 'concepto', sign: '+' },
-    { code: '3672', type: 'concepto', sign: '+' },
-    { code: '7292', type: 'concepto', sign: '+' },
-    { code: '3576', type: 'concepto', sign: '−' },
-    { code: '3676', type: 'concepto', sign: '−' },
-    { code: '7289', type: 'concepto', sign: '−' },
-  ]},
-];
+// Mapa categoría → label legible
+const CAT_LABELS = {
+  precio:   'PRECIO',
+  estimulo: 'ASIG. ESTÍMULO',
+  cargas:   'CARGAS SS',
+  provMes:  'PROV. MES',
+};
+
+/**
+ * Convierte una config (DEFAULT_RVA_CONFIG-like) en filas de display para
+ * el panel de mapeo. Cada fila trae { cat, entries: [{ code, type }] }.
+ */
+function configToDisplayBlocks(config) {
+  const blocks = [];
+  for (const [catKey, codes] of Object.entries(config?.cuentaCats || {})) {
+    if (!codes || codes.length === 0) continue;
+    blocks.push({
+      cat: CAT_LABELS[catKey] || catKey,
+      entries: codes.map(code => ({ code: String(code), type: 'cuenta' })),
+    });
+  }
+  if (config?.provCcssConcepts?.length) {
+    blocks.push({
+      cat: 'PROV. CCSS MES',
+      entries: config.provCcssConcepts.map(code => ({ code: String(code), type: 'concepto' })),
+    });
+  }
+  return blocks;
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -118,17 +155,15 @@ const diffStyle = d => hasDiff(d) ? 'color:var(--color-danger);font-weight:600;'
  *                                     pasa, solo se muestra el código.
  * @param {boolean} opts.openByDefault - si el <details> arranca abierto
  */
-export function renderRendVsAsientoMappingPanel(container, { accountNames = {}, openByDefault = true } = {}) {
-  const ccRedirRows = Object.entries(CC_REDIR).map(([from, to]) => ({
-    from: from.replace(/\b\w/g, c => c.toUpperCase()),
-    to:   CC_REDIR_LABEL[to] ?? to,
-  }));
+export function renderRendVsAsientoMappingPanel(container, { accountNames = {}, conceptNames = {}, config = DEFAULT_RVA_CONFIG, openByDefault = true } = {}) {
+  const ccRedirRows = (config?.ccRedirects || []).map(({ from, to }) => ({ from, to }));
 
-  const categoryRows = ACCOUNT_MAP_DISPLAY.map(({ cat, entries }) => {
+  const categoryRows = configToDisplayBlocks(config).map(({ cat, entries }) => {
     const items = entries.map(e => {
-      const sign = e.sign || '';
-      const name = e.type === 'cuenta' ? (accountNames[e.code] || '') : '';
-      return { sign, code: e.code, name, type: e.type };
+      const name = e.type === 'cuenta'
+        ? (accountNames[e.code] || '')
+        : (conceptNames[e.code] || '');
+      return { code: e.code, name, type: e.type, sign: '' };
     });
     return { cat, items };
   });
@@ -193,12 +228,161 @@ export function renderRendVsAsientoMappingPanel(container, { accountNames = {}, 
   container.appendChild(details);
 }
 
+// ── Editor de configuración (versión editable del panel) ─────────────────────
+
+/**
+ * Renderiza un editor que permite al usuario modificar el mapeo CONTA → Rendimiento.
+ * Cada cambio dispara onChange(newConfig).
+ *
+ * @param {HTMLElement} container
+ * @param {Object} opts
+ * @param {Object} opts.config            — config actual (default: DEFAULT_RVA_CONFIG)
+ * @param {Object} opts.accountNames      — mapa CUENTA_CONTAB → N_CUENTA_CONTABLE (de CONTA)
+ * @param {Object} opts.conceptNames      — mapa ID_CONCEPTO → NOMBRE_LARGO (de CONTA)
+ * @param {Function} opts.onChange        — callback(newConfig)
+ * @param {boolean} opts.openByDefault
+ */
+export function renderRendVsAsientoConfigEditor(container, opts = {}) {
+  const {
+    config = DEFAULT_RVA_CONFIG,
+    accountNames = {},
+    conceptNames = {},
+    onChange = () => {},
+    openByDefault = true,
+  } = opts;
+
+  // Clon mutable que el editor va modificando
+  let current = JSON.parse(JSON.stringify(config));
+  // Asegurar shape consistente
+  if (!current.cuentaCats) current.cuentaCats = {};
+  if (!current.provCcssConcepts) current.provCcssConcepts = [];
+  if (!current.ccRedirects) current.ccRedirects = [];
+
+  const parseList = s => String(s || '').split(/[,\s]+/).map(t => t.trim()).filter(Boolean);
+  const parseRedirects = s => String(s || '').split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => {
+      const m = line.match(/^(.+?)\s*(?:→|->|=>)\s*(.+)$/);
+      return m ? { from: m[1].trim(), to: m[2].trim() } : null;
+    })
+    .filter(Boolean);
+
+  const lookupsHtml = (codes, lookupMap, emptyMsg) => {
+    if (!codes.length) return `<em style="color:var(--color-text-muted);">${esc(emptyMsg)}</em>`;
+    return codes.map(c => {
+      const name = lookupMap[c];
+      if (name) {
+        return `<span style="display:inline-block;padding:2px 6px;margin:2px 4px 0 0;background:var(--color-match-exact-bg,#e6f7ec);border-radius:var(--radius-sm);font-family:monospace;font-size:var(--text-sm);"><strong>${esc(c)}</strong> · ${esc(name)}</span>`;
+      }
+      return `<span style="display:inline-block;padding:2px 6px;margin:2px 4px 0 0;background:var(--color-warning-bg,#fff4e0);border-radius:var(--radius-sm);font-family:monospace;font-size:var(--text-sm);"><strong>${esc(c)}</strong> · <em>no encontrado en CONTA</em></span>`;
+    }).join('');
+  };
+
+  const editor = document.createElement('details');
+  if (openByDefault) editor.open = true;
+  editor.style.cssText = 'margin-top:var(--sp-3);';
+
+  const renderInner = () => {
+    const ccRedirText = current.ccRedirects.map(r => `${r.from} → ${r.to}`).join('\n');
+
+    editor.innerHTML = `
+      <summary style="cursor:pointer;font-size:var(--text-sm);font-weight:var(--fw-semibold);color:var(--color-primary);list-style:none;display:flex;align-items:center;gap:var(--sp-2);user-select:none;padding:var(--sp-2) 0;">
+        <span>▾</span> Mapeo CONTA → Rendimiento — Configuración
+      </summary>
+      <div style="padding:var(--sp-4);background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);">
+        <p style="margin:0 0 var(--sp-3);font-size:var(--text-sm);color:var(--color-text-muted);">
+          Los códigos definen cómo se clasifica cada fila de CONTA. Los cambios se guardan por cliente y se aplican al ejecutar.
+        </p>
+
+        <h5 style="margin:var(--sp-3) 0 var(--sp-2);font-size:var(--text-sm);">Clasificación por CUENTA_CONTAB</h5>
+        ${['precio', 'estimulo', 'cargas', 'provMes'].map(catKey => {
+          const codes = current.cuentaCats[catKey] || [];
+          return `
+            <div style="display:grid;grid-template-columns:160px 1fr;gap:var(--sp-3);align-items:start;margin-bottom:var(--sp-3);">
+              <label class="form-label" style="margin:0;padding-top:6px;">${esc(CAT_LABELS[catKey])}</label>
+              <div>
+                <input type="text" class="form-input" data-rva-cat="${catKey}" value="${esc(codes.join(', '))}" placeholder="ej: 5208001, 5208002" style="font-family:monospace;">
+                <div data-rva-lookup="cat-${catKey}" style="margin-top:6px;font-size:var(--text-sm);">${lookupsHtml(codes, accountNames, 'Sin códigos asignados')}</div>
+              </div>
+            </div>
+          `;
+        }).join('')}
+
+        <h5 style="margin:var(--sp-4) 0 var(--sp-2);font-size:var(--text-sm);">PROV. CCSS MES (por ID_CONCEPTO)</h5>
+        <div style="display:grid;grid-template-columns:160px 1fr;gap:var(--sp-3);align-items:start;margin-bottom:var(--sp-2);">
+          <label class="form-label" style="margin:0;padding-top:6px;">Conceptos</label>
+          <div>
+            <input type="text" class="form-input" data-rva-prov-ccss value="${esc(current.provCcssConcepts.join(', '))}" placeholder="ej: 3572, 3672, 7292, 3576, 3676, 7289" style="font-family:monospace;">
+            <div data-rva-lookup="prov-ccss" style="margin-top:6px;font-size:var(--text-sm);">${lookupsHtml(current.provCcssConcepts, conceptNames, 'Sin conceptos asignados')}</div>
+            <p class="text-muted" style="margin:var(--sp-2) 0 0;font-size:var(--text-sm);">Las filas con estos conceptos van exclusivamente a PROV. CCSS MES sumando DEBE−HABER.</p>
+          </div>
+        </div>
+
+        <h5 style="margin:var(--sp-4) 0 var(--sp-2);font-size:var(--text-sm);">Mapeo de Centro de Costo (CONTA → Rendimiento)</h5>
+        <div style="display:grid;grid-template-columns:160px 1fr;gap:var(--sp-3);align-items:start;">
+          <label class="form-label" style="margin:0;padding-top:6px;">Redirects</label>
+          <div>
+            <textarea class="form-input" data-rva-cc-redirects rows="${Math.max(current.ccRedirects.length + 1, 3)}" placeholder="Uno por línea — formato: CONTA → Rendimiento" style="font-family:monospace;width:100%;resize:vertical;">${esc(ccRedirText)}</textarea>
+            <p class="text-muted" style="margin:var(--sp-2) 0 0;font-size:var(--text-sm);">Uno por línea. Ejemplo: <code>Finanzas → Servicios Legales</code></p>
+          </div>
+        </div>
+
+        <div style="margin-top:var(--sp-4);padding-top:var(--sp-3);border-top:1px solid var(--color-border);">
+          <button type="button" class="btn btn--ghost btn--sm" data-rva-reset>↻ Restaurar valores por defecto</button>
+        </div>
+      </div>
+    `;
+
+    // Event handlers después de cada render
+    editor.querySelectorAll('[data-rva-cat]').forEach(input => {
+      const catKey = input.dataset.rvaCat;
+      const lookupDiv = editor.querySelector(`[data-rva-lookup="cat-${catKey}"]`);
+      input.addEventListener('input', () => {
+        const codes = parseList(input.value);
+        lookupDiv.innerHTML = lookupsHtml(codes, accountNames, 'Sin códigos asignados');
+      });
+      input.addEventListener('change', () => {
+        current.cuentaCats[catKey] = parseList(input.value);
+        onChange(current);
+      });
+    });
+
+    const provInput   = editor.querySelector('[data-rva-prov-ccss]');
+    const provLookup  = editor.querySelector('[data-rva-lookup="prov-ccss"]');
+    provInput?.addEventListener('input', () => {
+      const codes = parseList(provInput.value);
+      provLookup.innerHTML = lookupsHtml(codes, conceptNames, 'Sin conceptos asignados');
+    });
+    provInput?.addEventListener('change', () => {
+      current.provCcssConcepts = parseList(provInput.value);
+      onChange(current);
+    });
+
+    editor.querySelector('[data-rva-cc-redirects]')?.addEventListener('change', e => {
+      current.ccRedirects = parseRedirects(e.target.value);
+      onChange(current);
+    });
+
+    editor.querySelector('[data-rva-reset]')?.addEventListener('click', () => {
+      current = JSON.parse(JSON.stringify(DEFAULT_RVA_CONFIG));
+      onChange(current);
+      renderInner();
+    });
+  };
+
+  renderInner();
+  container.appendChild(editor);
+}
+
 // ── runRendVsAsiento ──────────────────────────────────────────────────────────
 
 export function runRendVsAsiento(rendRows, _tabRows, mapping) {
   const rm        = mapping.rend || {};
   const contaRows = mapping.contaRows || [];
   const ccXEeRows = mapping.ccXEeRows || [];
+  const config    = mapping.rvaConfig || DEFAULT_RVA_CONFIG;
+  const { cuentaToCat, provCcss, ccRedir, ccRedirLbl } = buildIndexes(config);
 
   if (!rendRows?.length)  return { error: 'No hay datos del Reporte de Rendimiento.' };
   if (!contaRows?.length) return { error: 'No hay datos de Contabilidad Desglosada (CONTA).' };
@@ -215,6 +399,7 @@ export function runRendVsAsiento(rendRows, _tabRows, mapping) {
   // ── Agrupar CONTA por CC × categoría ─────────────────────────────────────
   const contaGroups  = new Map();   // nameKey → bucket
   const accountNames = new Map();   // cuenta_contab code → N_CUENTA_CONTABLE
+  const conceptNames = new Map();   // id_concepto code → NOMBRE_LARGO
   const detalle      = [];          // toda fila clasificada (para Excel de auditoría)
   let noCategorizadas = 0;
 
@@ -231,35 +416,38 @@ export function runRendVsAsiento(rendRows, _tabRows, mapping) {
     const origKey = normCCName(ccRaw);
     if (!origKey) continue;
 
-    // Aplicar redirect de CC (Finanzas → Servicios Legales, Facilities → Administración)
-    const nameKey = CC_REDIR[origKey] ?? origKey;
+    // Aplicar redirect de CC según la config
+    const nameKey = ccRedir.get(origKey) ?? origKey;
     const wasRedirected = nameKey !== origKey;
 
     if (!contaGroups.has(nameKey)) {
       contaGroups.set(nameKey, {
-        ccLabel: wasRedirected ? (CC_REDIR_LABEL[nameKey] ?? ccRaw) : ccRaw,
+        ccLabel: wasRedirected ? (ccRedirLbl.get(nameKey) ?? ccRaw) : ccRaw,
         precio: 0, estimulo: 0, cargas: 0, provMes: 0, provCcss: 0,
       });
     }
     const g     = contaGroups.get(nameKey);
     const valor = (toNum(row.debe) ?? 0) - (toNum(row.haber) ?? 0);
 
-    // Colectar nombres de cuentas para el panel de mapeo
+    // Colectar nombres de cuentas y conceptos para el panel de mapeo
     const cuentaCode = norm(row.cuenta_contab);
     if (cuentaCode && row.n_cuenta_contable && !accountNames.has(cuentaCode)) {
       accountNames.set(cuentaCode, norm(row.n_cuenta_contable));
     }
+    const concepto = norm(row.id_concepto);
+    if (concepto && row.nombre_largo && !conceptNames.has(concepto)) {
+      conceptNames.set(concepto, norm(row.nombre_largo));
+    }
 
     // Clasificación EXCLUSIVA: si la fila es de un concepto de PROV. CCSS, va sólo
     // a provCcss (no a CARGAS, aunque su CUENTA_CONTAB sea 5208005). El resto se
-    // clasifica por CUENTA_CONTAB.
-    const concepto = norm(row.id_concepto);
+    // clasifica por CUENTA_CONTAB según la config.
     let catKey = null;
-    if (PROV_CCSS_ALL.has(concepto)) {
+    if (provCcss.has(concepto)) {
       catKey = 'provCcss';
       g.provCcss += valor;
     } else {
-      const catByAccount = cuentaCode ? CUENTA_CONTAB_CATS[cuentaCode] : null;
+      const catByAccount = cuentaCode ? cuentaToCat.get(cuentaCode) : null;
       if (catByAccount) {
         catKey = catByAccount;
         g[catByAccount] += valor;
@@ -366,8 +554,10 @@ export function runRendVsAsiento(rendRows, _tabRows, mapping) {
     summary, rows, ccsSoloEnConta,
     meta: {
       accountNames: Object.fromEntries(accountNames),
+      conceptNames: Object.fromEntries(conceptNames),
       hasOverride,
       detalle,  // todas las filas clasificadas — usadas por las pestañas Detalle/Desglose del export
+      config,   // config aplicada en este run (para que los Resultados puedan mostrar exactamente qué se usó)
     },
   };
 }
@@ -412,6 +602,7 @@ export function renderRendVsAsientoResults(results, container) {
   }
 
   const accountNames = meta?.accountNames || {};
+  const conceptNames = meta?.conceptNames || {};
 
   // ── Panel de cuentas utilizadas ───────────────────────────────────────────
   let accountMapSortCol = 'cat';  // 'cat' | 'code' | 'name'
@@ -419,13 +610,13 @@ export function renderRendVsAsientoResults(results, container) {
 
   const buildAccountMapRows = () => {
     const flat = [];
-    for (const { cat, entries } of ACCOUNT_MAP_DISPLAY) {
+    const cfg = meta?.config || DEFAULT_RVA_CONFIG;
+    for (const { cat, entries } of configToDisplayBlocks(cfg)) {
       for (const e of entries) {
         const name = e.type === 'cuenta'
           ? (accountNames[e.code] || '')
-          : `(por ID_CONCEPTO)`;
-        const sign = e.sign || '';
-        flat.push({ cat, code: `${sign}${e.code}`, name, type: e.type, sign });
+          : (conceptNames[e.code] || '(por ID_CONCEPTO)');
+        flat.push({ cat, code: e.code, name, type: e.type, sign: '' });
       }
     }
     return flat.sort((a, b) => {

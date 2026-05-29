@@ -28,7 +28,7 @@ import { autoDetectRendimientoMapping } from '../parsers/rendimientoParser.js';
 import { buildParserMapping }           from '../parsers/conceptMatcher.js';
 import { currentPeriod, periodOptions } from '../utils/dates.js';
 import { renderConceptGroupingEditor }     from './rendVsTabuConceptEditor.js';
-import { renderRendVsAsientoMappingPanel } from '../controls/rendVsAsiento.js';
+import { renderRendVsAsientoConfigEditor, DEFAULT_RVA_CONFIG } from '../controls/rendVsAsiento.js';
 import { showToast, showConfirm }          from './toast.js';
 
 // Mapa: fileType → función de auto-detección de columnas
@@ -59,10 +59,11 @@ export async function renderControlsWizard(root, clientId) {
     return;
   }
 
-  const [savedBrutosConfig, savedCatalog, savedRendGrouping] = await Promise.all([
+  const [savedBrutosConfig, savedCatalog, savedRendGrouping, savedRvaConfig] = await Promise.all([
     getFileProfile(Number(clientId), 'brutos_tab_config'),
     getClientCatalog(Number(clientId)),
     getFileProfile(Number(clientId), 'rendvstabu_concept_grouping'),
+    getFileProfile(Number(clientId), 'rva_config'),
   ]);
 
   const state = {
@@ -80,6 +81,9 @@ export async function renderControlsWizard(root, clientId) {
     tabExtraConfig:            savedBrutosConfig?.mapping || {},
     tabExtraConfigAutoDetected: false,
     rendVsTabuGrouping:        savedRendGrouping?.mapping || null,
+    // Config del Control 6 (Rendimiento vs Asiento): clasificación CUENTA_CONTAB,
+    // conceptos PROV CCSS y redirects de CC. Editable por el usuario en el paso Archivos.
+    rvaConfig:                 savedRvaConfig?.mapping || JSON.parse(JSON.stringify(DEFAULT_RVA_CONFIG)),
     expandedGroups:            new Set(),  // grupos de controles cuyo panel de modos está abierto
     lastRunId:                 null,       // runId del último execute exitoso
     lastRunResults:            null,       // { [controlId]: results } del último execute exitoso
@@ -616,16 +620,41 @@ function renderStepFiles(container, state, root) {
           if (!state.controlFiles[controlId]) state.controlFiles[controlId] = {};
           state.controlFiles[controlId][fileSpec.key] = data;
           renderWizardNav(root, state);
+          // CONTA recién cargado → re-renderizar el step para que el editor de
+          // rend_vs_asiento muestre los nombres de cuentas/conceptos al lado de cada código.
+          if (controlId === 'rend_vs_asiento' && fileSpec.key === 'conta') {
+            renderStepFiles(container, state, root);
+          }
         },
       });
     }
 
-    // Panel de mapeo de Rendimiento vs Asiento (visible junto a sus archivos)
+    // Editor de configuración de Rendimiento vs Asiento (visible junto a sus archivos)
     if (controlId === 'rend_vs_asiento') {
       const mapWrapper = document.createElement('div');
       mapWrapper.style.marginBottom = 'var(--sp-3)';
       filesArea.appendChild(mapWrapper);
-      renderRendVsAsientoMappingPanel(mapWrapper, { openByDefault: true });
+
+      // Construir lookups a partir del CONTA si está cargado
+      const contaData = state.controlFiles[controlId]?.conta;
+      const accountNames = {};
+      const conceptNames = {};
+      for (const r of (contaData?.parsedRows || [])) {
+        const cc = String(r.cuenta_contab || '').trim();
+        const cn = String(r.n_cuenta_contable || '').trim();
+        if (cc && cn && !accountNames[cc]) accountNames[cc] = cn;
+        const co = String(r.id_concepto || '').trim();
+        const nl = String(r.nombre_largo || '').trim();
+        if (co && nl && !conceptNames[co]) conceptNames[co] = nl;
+      }
+
+      renderRendVsAsientoConfigEditor(mapWrapper, {
+        config:       state.rvaConfig,
+        accountNames,
+        conceptNames,
+        openByDefault: true,
+        onChange:     (newConfig) => { state.rvaConfig = newConfig; },
+      });
     }
   }
 
@@ -978,6 +1007,11 @@ async function executeControls(state, statusEl, container, root) {
       await saveFileProfile(state.clientId, 'rendvstabu_concept_grouping', state.rendVsTabuGrouping);
     }
 
+    // 3c. Guardar config del Control 6 (Rendimiento vs Asiento) si fue editada
+    if (state.selectedControls.includes('rend_vs_asiento') && state.rvaConfig) {
+      await saveFileProfile(state.clientId, 'rva_config', state.rvaConfig);
+    }
+
     // 4. Por cada control: guardar archivos adicionales y ejecutar lógica
     const runResults = {};
 
@@ -1001,6 +1035,10 @@ async function executeControls(state, statusEl, container, root) {
       };
       if ((controlId === 'rend_vs_tabu' || controlId === 'rend_vs_asiento') && state.rendVsTabuGrouping) {
         mapping.conceptGrouping = state.rendVsTabuGrouping;
+      }
+      // Config editable del Control 6 (Rendimiento vs Asiento)
+      if (controlId === 'rend_vs_asiento' && state.rvaConfig) {
+        mapping.rvaConfig = state.rvaConfig;
       }
       for (const fileSpec of ctrl.additionalFiles) {
         const fileData = state.controlFiles[controlId]?.[fileSpec.key];
