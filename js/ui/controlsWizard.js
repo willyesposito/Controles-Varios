@@ -1,9 +1,9 @@
 // controlsWizard.js — Wizard de ejecución de controles para un cliente
 //
 // Flujo de 3 pasos:
-//   1. Cargar Tabulado (archivo pivote, requerido por la mayoría de controles)
-//   2. Seleccionar controles y cargar sus archivos adicionales
-//   3. Elegir período, revisar resumen y ejecutar
+//   0. Seleccionar controles a ejecutar
+//   1. Cargar archivos (Tabulado si hace falta + archivos adicionales de cada control)
+//   2. Configurar período, ejecutar y ver resultados (inline, sin navegar)
 
 import {
   getClient,
@@ -80,6 +80,8 @@ export async function renderControlsWizard(root, clientId) {
     tabExtraConfigAutoDetected: false,
     rendVsTabuGrouping:        savedRendGrouping?.mapping || null,
     expandedGroups:            new Set(),  // grupos de controles cuyo panel de modos está abierto
+    lastRunId:                 null,       // runId del último execute exitoso
+    lastRunResults:            null,       // { [controlId]: results } del último execute exitoso
   };
 
   root.innerHTML = `
@@ -121,9 +123,9 @@ function render(root, state) {
   fadeWrap.className = 'wizard-step-fade';
   content.appendChild(fadeWrap);
   switch (state.step) {
-    case 0: renderStepTab(fadeWrap, state, root);      break;
-    case 1: renderStepControls(fadeWrap, state, root);  break;
-    case 2: renderStepExecute(fadeWrap, state, root);   break;
+    case 0: renderStepControls(fadeWrap, state, root); break;
+    case 1: renderStepFiles(fadeWrap, state, root);    break;
+    case 2: renderStepExecute(fadeWrap, state, root);  break;
   }
 
   // Botones de navegación
@@ -139,6 +141,7 @@ function render(root, state) {
       state.step++;
       render(root, state);
     } else if (e.key === 'ArrowLeft' && state.step > 0) {
+      if (state.step === 2) state.lastRunResults = null;
       state.step--;
       render(root, state);
     }
@@ -146,7 +149,7 @@ function render(root, state) {
 }
 
 function buildStepDots(current) {
-  const labels = ['Tabulado', 'Controles', 'Ejecutar'];
+  const labels = ['Controles', 'Archivos', 'Ejecutar'];
   return labels.map((lbl, i) => {
     const isDone   = i < current;
     const isActive = i === current;
@@ -169,12 +172,14 @@ function renderWizardNav(root, state) {
   const isLast  = state.step === 2;
   const canNext = canGoNext(state);
 
+  // En step 2 con resultados ya mostrados, el prev dice "Reconfigurar"
+  const prevLabel = (state.step === 2 && state.lastRunResults) ? '← Reconfigurar' : '← Anterior';
   const hint = !canNext && !isLast ? nextStepHint(state) : '';
 
   nav.innerHTML = `
     <div style="display:flex;align-items:center;gap:var(--sp-3);">
       ${!isFirst
-        ? `<button class="btn btn--ghost btn--sm" id="js-prev-btn">← Anterior</button>`
+        ? `<button class="btn btn--ghost btn--sm" id="js-prev-btn">${prevLabel}</button>`
         : ''}
       ${!isLast ? `
         <span class="text-muted" style="font-size:11px;display:none;" id="js-kbd-hint">
@@ -199,6 +204,8 @@ function renderWizardNav(root, state) {
   if (kbdHint && window.innerWidth > 720) kbdHint.style.display = 'inline';
 
   nav.querySelector('#js-prev-btn')?.addEventListener('click', () => {
+    // Volver desde resultados → limpiar para forzar nueva ejecución
+    if (state.step === 2) state.lastRunResults = null;
     state.step--;
     render(root, state);
   });
@@ -209,7 +216,7 @@ function renderWizardNav(root, state) {
 
 function nextStepHint(state) {
   switch (state.step) {
-    case 0: return 'Cargá el Tabulado para continuar';
+    case 0: return 'Seleccioná al menos un control para continuar';
     case 1: return 'Completá los archivos y columnas requeridas';
     default: return '';
   }
@@ -217,32 +224,31 @@ function nextStepHint(state) {
 
 function canGoNext(state) {
   switch (state.step) {
-    case 0: {
-      const anyTabRequired = state.selectedControls.length === 0
-        || state.selectedControls.some(id => CONTROL_REGISTRY[id]?.tabRequired !== false);
-      return !anyTabRequired || state.tab !== null;
-    }
+    case 0:
+      return state.selectedControls.length > 0;
+
     case 1: {
-      const allFiles = state.selectedControls.length > 0
-        && state.selectedControls.every(id => {
-          const ctrl = CONTROL_REGISTRY[id];
-          if (!ctrl) return false;
-          return ctrl.additionalFiles.every(f => f.optional || state.controlFiles[id]?.[f.key] != null);
-        });
+      // Tabulado: requerido si algún control seleccionado lo necesita
+      const anyTabRequired = state.selectedControls.some(id => CONTROL_REGISTRY[id]?.tabRequired !== false);
+      if (anyTabRequired && state.tab === null) return false;
+
+      // Todos los archivos adicionales no-opcionales deben estar cargados
+      const allFiles = state.selectedControls.every(id => {
+        const ctrl = CONTROL_REGISTRY[id];
+        if (!ctrl) return false;
+        return ctrl.additionalFiles.every(f => f.optional || state.controlFiles[id]?.[f.key] != null);
+      });
       if (!allFiles) return false;
 
       const cfg = state.tabExtraConfig;
-      // Si hay controles de Brutos, las columnas de concepto son obligatorias
       const hasBrutos = state.selectedControls.some(id => BRUTOS_IDS.includes(id));
       if (hasBrutos) {
         if (!cfg.tabSalBaseColumn || !cfg.tabACuFutAumenColumn) return false;
       }
-      // Si hay controles de GS Pers, las columnas de concepto son obligatorias
       const hasGsPers = state.selectedControls.some(id => GS_PERS_IDS.includes(id));
       if (hasGsPers) {
         if (!cfg.tabGtosPersonalesColumn || !cfg.tabDtoCocheraColumn) return false;
       }
-      // Si hay controles de NR, los 20 campos extra son obligatorios
       const hasNr = state.selectedControls.some(id => NR_IDS.includes(id));
       if (hasNr) {
         const nrRequired = [
@@ -254,170 +260,21 @@ function canGoNext(state) {
       }
       return true;
     }
+
     default: return false;
   }
 }
 
-// ── Paso 0: Cargar Tabulado ───────────────────────────────────────────────────
+// ── Paso 0: Seleccionar controles ─────────────────────────────────────────────
 
-function renderStepTab(container, state, root) {
-  const catMeta = state.catalog?.parseMetadata;
-  const catSummary = state.catalog
-    ? `✅ <strong>${esc(state.catalog.fileName)}</strong> — ${catMeta?.totalRows ?? 0} conceptos cargados`
-    : `📂 Sin catálogo cargado — se usará el catálogo estándar (${CATALOGO_SEED.length} conceptos).`;
-
-  container.innerHTML = `
-    <h3 style="margin:0 0 var(--sp-1);">Paso 1 — Tabulado estandarizado</h3>
-    <p class="text-muted" style="margin:0 0 var(--sp-2);font-size:var(--text-sm);">
-      Este archivo es la base para todos los controles. Se carga una vez por sesión y se comparte entre los controles.
-    </p>
-    ${infoBubble('¿Qué es un Tabulado?', `
-      <p style="margin:0 0 var(--sp-3);font-weight:var(--fw-semibold);">¿Qué es el Tabulado?</p>
-      <p style="margin:0 0 var(--sp-3);">
-        Es el archivo Excel que exporta el sistema de nómina del cliente con
-        <strong>una fila por empleado</strong> y <strong>una columna por concepto</strong>
-        (sueldo, asignaciones, aportes, contribuciones, etc.). Es el "estado de cuenta"
-        del mes que vamos a auditar.
-      </p>
-      <p style="margin:0 0 var(--sp-2);font-weight:var(--fw-semibold);">¿Por qué es central?</p>
-      <p style="margin:0;">
-        Todos los controles lo usan como base. Los demás archivos (Brutos, NR, Rendimiento)
-        se cruzan contra el Tabulado para detectar diferencias.
-      </p>
-    `)}
-
-    <details style="margin-bottom:var(--sp-3);" ${state.catalog ? '' : 'open'}>
-      <summary style="
-        cursor:pointer;font-size:var(--text-sm);font-weight:var(--fw-semibold);
-        color:var(--color-primary);list-style:none;display:flex;align-items:center;
-        gap:var(--sp-2);user-select:none;margin-bottom:var(--sp-1);
-      ">
-        <span>▸</span> Catálogo de Conceptos (opcional)
-      </summary>
-      <div style="margin-top:var(--sp-2);padding:var(--sp-3);background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);">
-
-        <p class="text-sm text-muted" style="margin:0 0 var(--sp-2);">
-          El catálogo define qué columnas del Tabulado corresponden a cada concepto y a qué controles
-          pertenecen. Si no cargás uno, se usa el catálogo estándar.
-        </p>
-        ${infoBubble('¿Qué es el Catálogo? ¿Cómo se arma?', `
-          <p style="margin:0 0 var(--sp-3);font-weight:var(--fw-semibold);">¿Qué es el Catálogo de Conceptos?</p>
-          <p style="margin:0 0 var(--sp-3);">
-            Es el mapa que conecta los <strong>nombres de columnas</strong> de los archivos del cliente
-            con los <strong>conceptos contables</strong> que la app conoce. Cargándolo una vez,
-            el auto-detect mejora notablemente y el análisis del Tabulado pasa a ser visible y accionable.
-          </p>
-
-          <p style="margin:0 0 var(--sp-2);font-weight:var(--fw-semibold);">Estructura del archivo (.xlsx)</p>
-          <table style="width:100%;border-collapse:collapse;margin-bottom:var(--sp-4);">
-            <thead>
-              <tr style="background:var(--color-bg-subtle);">
-                <th style="padding:4px 8px;text-align:left;border:1px solid var(--color-border);">Columna</th>
-                <th style="padding:4px 8px;text-align:left;border:1px solid var(--color-border);">Requerida</th>
-                <th style="padding:4px 8px;text-align:left;border:1px solid var(--color-border);">Descripción</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr><td style="padding:4px 8px;border:1px solid var(--color-border);font-family:monospace;">CODIGO</td><td style="padding:4px 8px;border:1px solid var(--color-border);">Sí</td><td style="padding:4px 8px;border:1px solid var(--color-border);">Identificador canónico del concepto. Ej: <code>SAL_BASE</code>, <code>INDEM_PREAVISO</code></td></tr>
-              <tr><td style="padding:4px 8px;border:1px solid var(--color-border);font-family:monospace;">DESCRIPCION</td><td style="padding:4px 8px;border:1px solid var(--color-border);">Sí</td><td style="padding:4px 8px;border:1px solid var(--color-border);">Nombre humano. Ej: "Sueldo Base", "Indemnización por Preaviso"</td></tr>
-              <tr><td style="padding:4px 8px;border:1px solid var(--color-border);font-family:monospace;">CLASIFICACION</td><td style="padding:4px 8px;border:1px solid var(--color-border);">Sí</td><td style="padding:4px 8px;border:1px solid var(--color-border);">Uno de: <code>remu</code> · <code>no_remu</code> · <code>aporte</code> · <code>contribucion</code></td></tr>
-              <tr><td style="padding:4px 8px;border:1px solid var(--color-border);font-family:monospace;">CONTROLES</td><td style="padding:4px 8px;border:1px solid var(--color-border);">No</td><td style="padding:4px 8px;border:1px solid var(--color-border);">IDs de controles que usan este concepto, separados por <code>|</code>. Ej: <code>brutos|nr</code></td></tr>
-              <tr><td style="padding:4px 8px;border:1px solid var(--color-border);font-family:monospace;">ALIAS</td><td style="padding:4px 8px;border:1px solid var(--color-border);">No</td><td style="padding:4px 8px;border:1px solid var(--color-border);">Otros nombres con que aparece la columna en archivos del cliente, separados por <code>|</code>. Ej: <code>sueldo|1003-|sal base</code></td></tr>
-            </tbody>
-          </table>
-
-          <p style="margin:0 0 var(--sp-2);font-weight:var(--fw-semibold);">¿Qué se gana cargándolo?</p>
-          <ul style="margin:0 0 var(--sp-3);padding-left:var(--sp-5);line-height:1.6;">
-            <li><strong>Auto-detect mejorado:</strong> el sistema busca las columnas usando el código, todos sus alias, y también tolera variaciones de espacios, guiones y errores de tipeo de un carácter.</li>
-            <li><strong>Panel de análisis del Tabulado:</strong> después de cargar el Tabulado se muestra qué columnas fueron reconocidas, cuáles son "huérfanas" (no están en el catálogo) y cuáles se esperaban pero no aparecen en el archivo.</li>
-            <li><strong>Visibilidad de conceptos nuevos:</strong> si el cliente empieza a liquidar un concepto nuevo, aparecerá en "Huérfanas" y podés decidir si agregarlo al catálogo.</li>
-          </ul>
-
-          <p style="margin:0;color:var(--color-text-muted);">
-            El catálogo se guarda por cliente. No hace falta cargarlo en cada sesión.
-            Si no cargás uno, la app usa el catálogo estándar (22 conceptos conocidos).
-          </p>
-        `, { mb: 2 })}
-
-        <div id="js-catalog-status" style="margin-bottom:var(--sp-2);">
-          <div class="alert ${state.catalog ? 'alert--success' : 'alert--info'}" style="margin:0;padding:var(--sp-2) var(--sp-3);font-size:var(--text-sm);">
-            ${catSummary}
-          </div>
-        </div>
-        <div id="js-catalog-upload" style="${state.catalog ? 'display:none' : ''}"></div>
-        ${state.catalog ? `<button class="btn btn--ghost btn--sm" id="js-catalog-replace">↺ Reemplazar catálogo</button>` : ''}
-      </div>
-    </details>
-
-    <div id="js-tab-upload"></div>
-    <div id="js-tab-analysis"></div>
-  `;
-
-  // Inicializar el upload del catálogo
-  const catalogUploadEl = container.querySelector('#js-catalog-upload');
-  initFileUploadStep(catalogUploadEl, {
-    clientId:    state.clientId,
-    fileType:    'concept_catalog',
-    existingData: null,
-    onComplete:  async (data) => {
-      state.catalog = { rows: data.rows, fileName: data.fileName, parseMetadata: data.parseMetadata };
-      await saveClientCatalog(state.clientId, state.catalog);
-      // Re-render el paso completo para reflejar el catálogo cargado
-      renderStepTab(container, state, root);
-    },
-  });
-
-  // Botón reemplazar
-  container.querySelector('#js-catalog-replace')?.addEventListener('click', async () => {
-    if (!await showConfirm('¿Reemplazar el catálogo guardado? Se perderá el catálogo actual.')) return;
-    const statusEl = container.querySelector('#js-catalog-status');
-    const uploadEl = container.querySelector('#js-catalog-upload');
-    statusEl.innerHTML = '<div class="alert alert--info" style="margin:0;">Cargá el nuevo catálogo:</div>';
-    uploadEl.style.display = '';
-    container.querySelector('#js-catalog-replace')?.remove();
-    initFileUploadStep(uploadEl, {
-      clientId:    state.clientId,
-      fileType:    'concept_catalog',
-      existingData: null,
-      onComplete:  async (data) => {
-        state.catalog = { rows: data.rows, fileName: data.fileName, parseMetadata: data.parseMetadata };
-        await saveClientCatalog(state.clientId, state.catalog);
-        renderStepTab(container, state, root);
-      },
-    });
-  });
-
-  const catalogRows = state.catalog?.rows || CATALOGO_SEED;
-  const analysisEl  = container.querySelector('#js-tab-analysis');
-
-  // Si el tabulado ya está cargado (ej: re-render tras cambio de catálogo), mostrar análisis de inmediato
-  if (state.tab) {
-    renderTabuladoAnalysis(analysisEl, state.tab, catalogRows, state.selectedControls);
-  }
-
-  initFileUploadStep(container.querySelector('#js-tab-upload'), {
-    clientId:    state.clientId,
-    fileType:    'tab_control',
-    existingData: state.tab,
-    autoDetect:  AUTO_DETECT.tab_control,
-    onComplete:  (data) => {
-      state.tab = data;
-      renderWizardNav(root, state);
-      renderTabuladoAnalysis(analysisEl, state.tab, catalogRows, state.selectedControls);
-    },
-  });
-}
-
-// ── Paso 1: Seleccionar controles y cargar archivos ───────────────────────────
-
-// Construye la sección colapsable "¿Qué hace cada control?" del paso 2.
+// Construye la sección colapsable "¿Qué hace cada control?" del paso 1.
 function buildHelpSection() {
   const allControls = Object.values(CONTROL_REGISTRY);
 
   const cards = allControls
     .filter(c => c.help)
     .map(c => {
-      const stepsHtml = c.help.how.map((step, i) =>
+      const stepsHtml = c.help.how.map((step) =>
         `<li style="margin-bottom:var(--sp-1);">${esc(step)}</li>`
       ).join('');
       return `
@@ -508,7 +365,6 @@ function isGroupExpanded(groupId, state) {
 function renderStepControls(container, state, root) {
   const blocks = buildControlBlocks();
 
-  // Render de cada bloque como HTML
   const blocksHtml = blocks.map(b => {
     if (b.kind === 'standalone') {
       const active = state.selectedControls.includes(b.ctrl.id);
@@ -551,9 +407,9 @@ function renderStepControls(container, state, root) {
   }).join('');
 
   container.innerHTML = `
-    <h3 style="margin:0 0 var(--sp-1);">Paso 2 — Controles a ejecutar</h3>
+    <h3 style="margin:0 0 var(--sp-1);">Paso 1 — Controles a ejecutar</h3>
     <p class="text-muted" style="margin:0 0 var(--sp-2);font-size:var(--text-sm);">
-      Seleccioná los controles que querés ejecutar. Cada uno puede requerir cargar un archivo adicional.
+      Seleccioná los controles que querés ejecutar. En el siguiente paso se pedirán los archivos necesarios.
     </p>
     ${infoBubble('¿Qué es un control?', `
       <p style="margin:0 0 var(--sp-3);font-weight:var(--fw-semibold);">¿Qué es un control?</p>
@@ -566,11 +422,8 @@ function renderStepControls(container, state, root) {
       <ul style="margin:0;padding-left:var(--sp-5);line-height:1.6;">
         <li><strong>Brutos:</strong> compara el sueldo del Tabulado con el del reporte de Brutos.</li>
         <li><strong>Rendimiento vs Tabulado:</strong> compara los conceptos del Tabulado con el reporte de Rendimiento por centro de costo.</li>
-        <li><strong>Cat x Empleados:</strong> verifica que cada empleado del Tabulado esté activo en el Catálogo de Empleados.</li>
+        <li><strong>Rendimiento vs Asiento:</strong> cruza el Rendimiento contra la Contabilidad Desglosada (no usa Tabulado).</li>
       </ul>
-      <p class="text-muted" style="margin:var(--sp-3) 0 0;font-size:0.9em;">
-        Abrí "¿Qué hace cada control?" más abajo para ver la ficha completa de cada uno.
-      </p>
     `)}
 
     ${buildHelpSection()}
@@ -578,7 +431,6 @@ function renderStepControls(container, state, root) {
     <div class="pill-group" id="js-control-pills" style="margin-bottom:var(--sp-3);">
       ${blocksHtml}
     </div>
-    <div id="js-control-files"></div>
   `;
 
   // Click en sub-pill o en pill standalone: activa/desactiva ese control
@@ -624,8 +476,112 @@ function renderStepControls(container, state, root) {
       renderWizardNav(root, state);
     });
   });
+}
 
-  // Áreas de carga de archivos adicionales por control seleccionado
+// ── Paso 1: Cargar todos los archivos ─────────────────────────────────────────
+
+function renderStepFiles(container, state, root) {
+  const anyTabRequired = state.selectedControls.some(
+    id => CONTROL_REGISTRY[id]?.tabRequired !== false
+  );
+
+  const catMeta = state.catalog?.parseMetadata;
+  const catSummary = state.catalog
+    ? `✅ <strong>${esc(state.catalog.fileName)}</strong> — ${catMeta?.totalRows ?? 0} conceptos cargados`
+    : `📂 Sin catálogo cargado — se usará el catálogo estándar (${CATALOGO_SEED.length} conceptos).`;
+
+  container.innerHTML = `
+    <h3 style="margin:0 0 var(--sp-1);">Paso 2 — Archivos</h3>
+    <p class="text-muted" style="margin:0 0 var(--sp-4);font-size:var(--text-sm);">
+      Cargá los archivos necesarios para los controles seleccionados.
+    </p>
+
+    ${anyTabRequired ? `
+      <details style="margin-bottom:var(--sp-3);" ${state.catalog ? '' : 'open'}>
+        <summary style="
+          cursor:pointer;font-size:var(--text-sm);font-weight:var(--fw-semibold);
+          color:var(--color-primary);list-style:none;display:flex;align-items:center;
+          gap:var(--sp-2);user-select:none;margin-bottom:var(--sp-1);
+        ">
+          <span>▸</span> Catálogo de Conceptos (opcional)
+        </summary>
+        <div style="margin-top:var(--sp-2);padding:var(--sp-3);background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);">
+          <p class="text-sm text-muted" style="margin:0 0 var(--sp-2);">
+            El catálogo define qué columnas del Tabulado corresponden a cada concepto. Si no cargás uno, se usa el catálogo estándar.
+          </p>
+          <div id="js-catalog-status" style="margin-bottom:var(--sp-2);">
+            <div class="alert ${state.catalog ? 'alert--success' : 'alert--info'}" style="margin:0;padding:var(--sp-2) var(--sp-3);font-size:var(--text-sm);">
+              ${catSummary}
+            </div>
+          </div>
+          <div id="js-catalog-upload" style="${state.catalog ? 'display:none' : ''}"></div>
+          ${state.catalog ? `<button class="btn btn--ghost btn--sm" id="js-catalog-replace">↺ Reemplazar catálogo</button>` : ''}
+        </div>
+      </details>
+
+      <div id="js-tab-upload"></div>
+      <div id="js-tab-analysis"></div>
+    ` : ''}
+
+    <div id="js-control-files"></div>
+  `;
+
+  // ── Tabulado + catálogo ──────────────────────────────────────────────────────
+  if (anyTabRequired) {
+    const catalogUploadEl = container.querySelector('#js-catalog-upload');
+    const analysisEl      = container.querySelector('#js-tab-analysis');
+    const catalogRows     = state.catalog?.rows || CATALOGO_SEED;
+
+    if (catalogUploadEl) {
+      initFileUploadStep(catalogUploadEl, {
+        clientId:    state.clientId,
+        fileType:    'concept_catalog',
+        existingData: null,
+        onComplete:  async (data) => {
+          state.catalog = { rows: data.rows, fileName: data.fileName, parseMetadata: data.parseMetadata };
+          await saveClientCatalog(state.clientId, state.catalog);
+          renderStepFiles(container, state, root);
+        },
+      });
+    }
+
+    container.querySelector('#js-catalog-replace')?.addEventListener('click', async () => {
+      if (!await showConfirm('¿Reemplazar el catálogo guardado? Se perderá el catálogo actual.')) return;
+      const statusEl = container.querySelector('#js-catalog-status');
+      const uploadEl = container.querySelector('#js-catalog-upload');
+      statusEl.innerHTML = '<div class="alert alert--info" style="margin:0;">Cargá el nuevo catálogo:</div>';
+      uploadEl.style.display = '';
+      container.querySelector('#js-catalog-replace')?.remove();
+      initFileUploadStep(uploadEl, {
+        clientId:    state.clientId,
+        fileType:    'concept_catalog',
+        existingData: null,
+        onComplete:  async (data) => {
+          state.catalog = { rows: data.rows, fileName: data.fileName, parseMetadata: data.parseMetadata };
+          await saveClientCatalog(state.clientId, state.catalog);
+          renderStepFiles(container, state, root);
+        },
+      });
+    });
+
+    if (state.tab) {
+      renderTabuladoAnalysis(analysisEl, state.tab, catalogRows, state.selectedControls);
+    }
+
+    initFileUploadStep(container.querySelector('#js-tab-upload'), {
+      clientId:    state.clientId,
+      fileType:    'tab_control',
+      existingData: state.tab,
+      autoDetect:  AUTO_DETECT.tab_control,
+      onComplete:  (data) => {
+        state.tab = data;
+        renderWizardNav(root, state);
+        renderTabuladoAnalysis(analysisEl, state.tab, catalogRows, state.selectedControls);
+      },
+    });
+  }
+
+  // ── Archivos adicionales por control ────────────────────────────────────────
   const filesArea = container.querySelector('#js-control-files');
 
   for (const controlId of state.selectedControls) {
@@ -664,7 +620,7 @@ function renderStepControls(container, state, root) {
     }
   }
 
-  // Panel de configuración de columnas del Tabulado para Brutos, GS Pers, NR y/o RendvsTabu
+  // ── Panel de configuración de columnas del Tabulado ─────────────────────────
   const hasBrutos    = state.selectedControls.some(id => BRUTOS_IDS.includes(id));
   const hasGsPers    = state.selectedControls.some(id => GS_PERS_IDS.includes(id));
   const hasNr        = state.selectedControls.some(id => NR_IDS.includes(id));
@@ -688,7 +644,6 @@ function renderStepControls(container, state, root) {
 
 // ── Configuración de columnas del Tabulado para Brutos / GS Pers ────────────
 
-// Campos compartidos por ambos controles (precarga con auto-detección o perfil guardado)
 const TAB_SHARED_FIELDS = [
   { key: 'tabNombreColumn',      label: 'Columna NOMBRE',     required: false },
   { key: 'tabApellido1Column',   label: 'Columna APELLIDO_1', required: false },
@@ -767,20 +722,15 @@ function autoDetectTabExtraConfig(tabHeaders, catalogRows) {
   const lc = h => String(h).toLowerCase();
   const find = (...kws) => tabHeaders.find(h => kws.some(kw => lc(h).includes(lc(kw)))) || '';
 
-  // Campos de empleado (no están en el catálogo) — detección hardcoded
   const nombre   = find('nombre');
   const apellido = find('apellido');
-
-  // Campos NR fijos (ID_CENTRO_TRAB, ID_CATEGORIA) — también son campos de nómina, no conceptos
   const idCentroTrab = find('id_centro_trab', 'centro_trab');
   const idCategoria  = find('id_categoria', 'categoria');
 
-  // Conceptos del catálogo → usar buildParserMapping con normalización + alias + fuzzy
   const conceptMapping = buildParserMapping(tabHeaders, catalog, TAB_EXTRA_CODIGO_TO_KEY);
 
   return {
     ...conceptMapping,
-    // Campos de empleado (hardcoded, no conceptos)
     tabNombreColumn:      (nombre && nombre !== apellido) ? nombre : '',
     tabApellido1Column:   (apellido && apellido !== nombre) ? apellido : '',
     tabFecAltaColumn:     find('fecha_alta', 'fec_alta', 'f_alta', 'alta'),
@@ -798,7 +748,6 @@ function renderTabExtraConfig(container, state, root, { hasBrutos, hasGsPers, ha
 
   const catalogRows = state.catalog?.rows || CATALOGO_SEED;
 
-  // Merge incremental: auto-detectar campos que aún no están configurados
   if (tabHeaders.length > 0) {
     const detected = autoDetectTabExtraConfig(tabHeaders, catalogRows);
     let anyNew = false;
@@ -814,8 +763,6 @@ function renderTabExtraConfig(container, state, root, { hasBrutos, hasGsPers, ha
   const hasSavedConfig = Object.values(state.tabExtraConfig).some(Boolean);
   const autoDetected   = state.tabExtraConfigAutoDetected;
 
-  // Construir lista de campos a mostrar según los controles seleccionados.
-  // { groupHeader: string } intercalado actúa como separador visual en el grid.
   const fields = [
     ...(hasBrutos ? TAB_BRUTOS_FIELDS  : []),
     ...(hasGsPers ? TAB_GS_PERS_FIELDS : []),
@@ -888,40 +835,16 @@ function renderTabExtraConfig(container, state, root, { hasBrutos, hasGsPers, ha
   container.appendChild(panel);
 }
 
-// ── Paso 2: Configurar período ────────────────────────────────────────────────
-
-function renderStepConfig(container, state) {
-  const periods = periodOptions(13);
-
-  container.innerHTML = `
-    <h3 style="margin:0 0 var(--sp-3);">Paso 3 — Período</h3>
-    <div class="form-group" style="max-width:320px;margin-bottom:var(--sp-3);">
-      <label class="form-label form-label--required">Período</label>
-      <select class="form-select" id="js-period-select">
-        ${periods.map(p =>
-          `<option value="${esc(p.value)}" ${p.value === state.period ? 'selected' : ''}>${esc(p.label)}</option>`
-        ).join('')}
-      </select>
-    </div>
-    <div class="form-group" style="max-width:480px;margin-bottom:0;">
-      <label class="form-label">Notas (opcional)</label>
-      <input type="text" class="form-input" id="js-notes-input"
-             value="${esc(state.notes)}"
-             placeholder="Observaciones del analista...">
-    </div>
-  `;
-
-  container.querySelector('#js-period-select').addEventListener('change', e => {
-    state.period = e.target.value;
-  });
-  container.querySelector('#js-notes-input').addEventListener('input', e => {
-    state.notes = e.target.value;
-  });
-}
-
-// ── Paso 2: Período, resumen y ejecución ─────────────────────────────────────
+// ── Paso 2: Configurar período y ejecutar ────────────────────────────────────
 
 function renderStepExecute(container, state, root) {
+  // Modo resultados: ya se ejecutó, mostrar inline
+  if (state.lastRunResults) {
+    renderInlineResults(container, state, root);
+    return;
+  }
+
+  // Modo pre-ejecución
   const periods  = periodOptions(13);
   const ctrlList = state.selectedControls
     .map(id => CONTROL_REGISTRY[id]?.label || id)
@@ -974,13 +897,44 @@ function renderStepExecute(container, state, root) {
   });
   container.querySelector('#js-execute-btn').addEventListener('click', () => {
     container.querySelector('#js-execute-btn').disabled = true;
-    executeControls(state, container.querySelector('#js-execute-status'));
+    executeControls(state, container.querySelector('#js-execute-status'), container, root);
+  });
+}
+
+function renderInlineResults(container, state, root) {
+  container.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--sp-4);">
+      <div>
+        <h3 style="margin:0 0 var(--sp-1);">${esc(state.client.name)} — Controles ${esc(state.period)}</h3>
+        <p class="text-muted" style="margin:0;font-size:var(--text-sm);">Ejecutado el ${new Date().toLocaleDateString('es-AR', { day:'numeric', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit' })}</p>
+      </div>
+      <button class="btn btn--ghost btn--sm" id="js-rerun-btn">↺ Ejecutar de nuevo</button>
+    </div>
+    <div id="js-inline-results"></div>
+  `;
+
+  const resultsContainer = container.querySelector('#js-inline-results');
+
+  for (const controlId of state.selectedControls) {
+    const ctrl = CONTROL_REGISTRY[controlId];
+    if (!ctrl || !state.lastRunResults[controlId]) continue;
+
+    const wrapper = document.createElement('div');
+    wrapper.style.marginBottom = 'var(--sp-5)';
+    resultsContainer.appendChild(wrapper);
+    ctrl.renderResults(state.lastRunResults[controlId], wrapper);
+  }
+
+  container.querySelector('#js-rerun-btn').addEventListener('click', () => {
+    state.lastRunResults = null;
+    renderStepExecute(container, state, root);
+    renderWizardNav(root, state);
   });
 }
 
 // ── Ejecución ─────────────────────────────────────────────────────────────────
 
-async function executeControls(state, statusEl) {
+async function executeControls(state, statusEl, container, root) {
   statusEl.innerHTML = `
     <div class="loading-screen">
       <div class="spinner"></div>
@@ -1007,8 +961,6 @@ async function executeControls(state, statusEl) {
       BRUTOS_IDS.includes(id) || GS_PERS_IDS.includes(id)
     );
     if (needsTabExtra && Object.keys(state.tabExtraConfig).length > 0) {
-      // La clave de profile se mantiene como 'brutos_tab_config' por compatibilidad
-      // histórica con perfiles ya guardados; el objeto ahora contiene campos de ambos.
       await saveFileProfile(state.clientId, 'brutos_tab_config', state.tabExtraConfig);
     }
 
@@ -1018,11 +970,12 @@ async function executeControls(state, statusEl) {
     }
 
     // 4. Por cada control: guardar archivos adicionales y ejecutar lógica
+    const runResults = {};
+
     for (const controlId of state.selectedControls) {
       const ctrl = CONTROL_REGISTRY[controlId];
       if (!ctrl) continue;
 
-      // Guardar archivos adicionales
       for (const fileSpec of ctrl.additionalFiles) {
         const fileData = state.controlFiles[controlId]?.[fileSpec.key];
         if (fileData) {
@@ -1033,13 +986,10 @@ async function executeControls(state, statusEl) {
         }
       }
 
-      // Armar mapping: tab + tabExtraConfig (si aplica) + archivos adicionales + período
       const mapping = {
         tab:    { ...(tab?.mapping || {}), ...state.tabExtraConfig },
         period: state.period,
       };
-      // La agrupación de conceptos se comparte entre Control 5 (rend_vs_tabu) y Control 6 (rend_vs_asiento),
-      // ambos usan los mismos códigos para clasificar PRECIO / ESTÍMULO / CARGAS / PROV. MES / PROV. CCSS.
       if ((controlId === 'rend_vs_tabu' || controlId === 'rend_vs_asiento') && state.rendVsTabuGrouping) {
         mapping.conceptGrouping = state.rendVsTabuGrouping;
       }
@@ -1051,20 +1001,21 @@ async function executeControls(state, statusEl) {
         }
       }
 
-      // Obtener filas: tab + la primera clave de archivos adicionales como "rows primarios"
       const tabRows     = tab?.parsedRows || [];
       const primaryKey  = ctrl.additionalFiles[0]?.key;
       const primaryRows = state.controlFiles[controlId]?.[primaryKey]?.parsedRows || [];
 
-      // Ejecutar
       const results = ctrl.run(primaryRows, tabRows, mapping);
+      runResults[controlId] = results;
 
-      // Guardar resultados
       await saveControlRunResults(runId, controlId, results);
     }
 
-    // Navegar a resultados
-    window.location.hash = `#/control-results/${runId}`;
+    // 5. Mostrar resultados inline (sin navegar a otra página)
+    state.lastRunId      = runId;
+    state.lastRunResults = runResults;
+    renderInlineResults(container, state, root);
+    renderWizardNav(root, state);
 
   } catch (err) {
     console.error('[controlsWizard] Error al ejecutar:', err);
@@ -1073,7 +1024,6 @@ async function executeControls(state, statusEl) {
         ❌ Error al ejecutar los controles: ${esc(err.message)}
       </div>
     `;
-    // Re-habilitar el botón para que el usuario pueda corregir y reintentar
     const execBtn = statusEl.parentElement?.querySelector('#js-execute-btn');
     if (execBtn) execBtn.disabled = false;
   }
@@ -1086,9 +1036,6 @@ function esc(str) {
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-// Genera un <details> de "info / tutorial" que se expande inline (empuja el contenido
-// hacia abajo en lugar de superponerse). Reemplaza el patrón anterior basado en
-// position:absolute que se solapaba con otros componentes.
 function infoBubble(label, contentHtml, { mb = 3 } = {}) {
   return `
     <details style="margin-bottom:var(--sp-${mb});">
