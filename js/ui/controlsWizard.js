@@ -227,7 +227,7 @@ function canGoNext(state) {
         && state.selectedControls.every(id => {
           const ctrl = CONTROL_REGISTRY[id];
           if (!ctrl) return false;
-          return ctrl.additionalFiles.every(f => state.controlFiles[id]?.[f.key] != null);
+          return ctrl.additionalFiles.every(f => f.optional || state.controlFiles[id]?.[f.key] != null);
         });
       if (!allFiles) return false;
 
@@ -1038,7 +1038,9 @@ async function executeControls(state, statusEl) {
         tab:    { ...(tab?.mapping || {}), ...state.tabExtraConfig },
         period: state.period,
       };
-      if (controlId === 'rend_vs_tabu' && state.rendVsTabuGrouping) {
+      // La agrupación de conceptos se comparte entre Control 5 (rend_vs_tabu) y Control 6 (rend_vs_asiento),
+      // ambos usan los mismos códigos para clasificar PRECIO / ESTÍMULO / CARGAS / PROV. MES / PROV. CCSS.
+      if ((controlId === 'rend_vs_tabu' || controlId === 'rend_vs_asiento') && state.rendVsTabuGrouping) {
         mapping.conceptGrouping = state.rendVsTabuGrouping;
       }
       for (const fileSpec of ctrl.additionalFiles) {

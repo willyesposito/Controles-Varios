@@ -11,6 +11,8 @@ import { parseBrutos } from '../parsers/brutosParser.js';
 import { parseGsPers } from '../parsers/gsPersParser.js';
 import { parseNr }     from '../parsers/nrParser.js';
 import { parseRendimiento } from '../parsers/rendimientoParser.js';
+import { parseConta }       from '../parsers/contaExcel.js';
+import { parseCcXEmpleado } from '../parsers/ccXEmpleadoExcel.js';
 import { parseConceptCatalog } from '../parsers/conceptCatalog.js';
 import { getFileProfile, saveFileProfile } from '../db.js';
 
@@ -97,6 +99,10 @@ const FIELD_DEFS = {
   ],
   // Catálogo de conceptos: formato fijo, no requiere mapping de columnas
   concept_catalog: [],
+  // Contabilidad Desglosada (CONTA): formato fijo, encabezados constantes
+  conta_file:      [],
+  // CC x Empleado: formato fijo, encabezados constantes
+  cc_x_ee_file:    [],
 };
 
 // Tipos que soportan mapeo de nombre (horizontal: una fila por empleado)
@@ -146,8 +152,8 @@ export async function initFileUploadStep(container, { clientId, fileType, existi
       return;
     }
 
-    // Catálogo de conceptos: formato fijo → no necesita mapping, parsear directo
-    if (fileType === 'concept_catalog') {
+    // Formatos fijos (sin mapping de columnas): catálogo, CONTA y CC x Empleado
+    if (fileType === 'concept_catalog' || fileType === 'conta_file' || fileType === 'cc_x_ee_file') {
       renderLoadingProgress(container, 'parsing');
       try {
         const result = parseFile(arrayBuffer, fileType, null);
@@ -159,7 +165,7 @@ export async function initFileUploadStep(container, { clientId, fileType, existi
           onComplete
         );
       } catch (err) {
-        renderError(container, `Error al procesar el catálogo: ${err.message}`,
+        renderError(container, `Error al procesar: ${err.message}`,
           () => initFileUploadStep(container, { clientId, fileType, existingData: null, onComplete }));
       }
       return;
@@ -342,8 +348,12 @@ function renderAlreadyLoaded(container, existingData, onReplace, onComplete) {
       + (parseMetadata?.noRemu       ? ` · ${parseMetadata.noRemu} no_remu`          : '')
       + (parseMetadata?.aporte       ? ` · ${parseMetadata.aporte} aportes`          : '')
       + (parseMetadata?.contribucion ? ` · ${parseMetadata.contribucion} contribuciones` : '');
-  } else if (fileType === 'tab_control' || fileType === 'brutos_file' || fileType === 'gs_pers_file' || fileType === 'nr_file' || fileType === 'rend_file') {
+  } else if (fileType === 'tab_control' || fileType === 'brutos_file' || fileType === 'gs_pers_file' || fileType === 'nr_file' || fileType === 'rend_file' || fileType === 'cc_x_ee_file') {
     metaLine = `${parseMetadata?.totalRows ?? 0} registros`;
+  } else if (fileType === 'conta_file') {
+    const desc = parseMetadata?.descartadasSinCC ?? 0;
+    metaLine = `${parseMetadata?.totalRows ?? 0} filas con CC`
+      + (desc > 0 ? ` &nbsp;·&nbsp; <span class="badge badge--warning">${desc} sin CC descartadas</span>` : '');
   } else {
     metaLine = `${parseMetadata?.uniqueLegajos ?? 0} legajos · ${parseMetadata?.detectedConcepts?.length ?? 0} conceptos`;
   }
@@ -587,6 +597,8 @@ function parseFile(arrayBuffer, fileType, mapping) {
     case 'gs_pers_file':                return parseGsPers(arrayBuffer, mapping);
     case 'nr_file':                     return parseNr(arrayBuffer, mapping);
     case 'rend_file':                   return parseRendimiento(arrayBuffer, mapping);
+    case 'conta_file':                  return parseConta(arrayBuffer);
+    case 'cc_x_ee_file':                return parseCcXEmpleado(arrayBuffer);
     case 'concept_catalog':             return parseConceptCatalog(arrayBuffer);
     default: throw new Error(`Tipo de archivo desconocido: "${fileType}".`);
   }
@@ -603,6 +615,8 @@ function fileTypeLabel(fileType) {
     gs_pers_file:                'Reporte de GS Pers (Gastos Personales y Cochera)',
     nr_file:                     'Reporte de NR (No Remunerativos)',
     rend_file:                   'Reporte de Rendimiento',
+    conta_file:                  'Contabilidad Desglosada',
+    cc_x_ee_file:                'CC x Empleado',
     concept_catalog:             'Catálogo de Conceptos',
   }[fileType] || fileType;
 }
