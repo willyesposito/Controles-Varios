@@ -60,6 +60,7 @@ export function parseConta(arrayBuffer) {
       cc_nombre:         cc,
       id_centro_costo:   norm(row['ID_CENTRO_COSTO']),
       id_conta:          norm(row['ID_CONTA']),
+      cuenta_contab:     norm(row['CUENTA_CONTAB']),
       n_cuenta_contable: norm(row['N_CUENTA_CONTABLE']),
       debe:              toNum(row['DEBE'])  ?? 0,
       haber:             toNum(row['HABER']) ?? 0,

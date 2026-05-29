@@ -1,34 +1,72 @@
 // rendVsAsiento.js — Control 6: Rendimiento vs Asiento (Contabilidad Desglosada)
 //
 // Compara el Reporte de Rendimiento de M4 (por CC) contra la Contabilidad
-// Desglosada (CONTA). Para cada CC, agrupa las filas de CONTA por categoría
-// (clasificando ID_CONCEPTO con la misma config que el Control 5) y suma
-// DEBE − HABER. El cruce se muestra como tabla por CC × categoría, con la
-// columna CTRL = CONTA − Rend en rojo cuando hay diferencia.
+// Desglosada (CONTA). Para cada CC, agrupa las filas de CONTA clasificando
+// por CUENTA_CONTAB (categorías 1–4) y por ID_CONCEPTO (PROV. CCSS MES),
+// suma DEBE − HABER y cruza contra el Rendimiento.
 //
 // Archivos:
 //   - Rendimiento (rend_file)        — obligatorio
 //   - Contabilidad Desglosada (CONTA) — obligatorio
 //   - CC x Empleado                   — opcional, sobrescribe CC_NOMBRE de CONTA
-//     por el ID_CENTRO_COSTO/CENTRO_COSTO actualizado a partir de ID_EMPLEADO.
 
-import { DEFAULT_CONCEPT_CONFIG } from './rendVsTabu.js';
+// ── Clasificación por CUENTA_CONTAB ──────────────────────────────────────────
 
-// ── Definición de columnas comparadas (mismo orden que Control 5, sin RETIROS) ─
+const CUENTA_CONTAB_CATS = {
+  '5208001': 'precio',
+  '5208006': 'estimulo',
+  '5208005': 'cargas',
+  '5208007': 'provMes',
+  '5208004': 'provMes',
+  '5208003': 'provMes',
+};
+
+// PROV. CCSS MES: (Σ DEBE−HABER de conceptos positivos) − (Σ DEBE−HABER de conceptos negativos)
+const PROV_CCSS_POS = new Set(['3572', '3672', '7292']);
+const PROV_CCSS_NEG = new Set(['3576', '3676', '7289']);
+
+// Redirects de CC: Finanzas y Facilities en CONTA se suman a los CC equivalentes de Rendimiento
+const CC_REDIR = {
+  'finanzas':   'servicios legales',
+  'facilities': 'administracion',
+};
+// Nombres legibles de los CC destino (para la etiqueta cuando el grupo se crea con datos redirigidos)
+const CC_REDIR_LABEL = {
+  'servicios legales': 'Servicios Legales',
+  'administracion':    'Administración',
+};
+
+// ── Definición de columnas comparadas ────────────────────────────────────────
 
 const COLS = [
-  { key: 'precio',   label: 'PRECIO',          rKey: 'rPrecio',   cKey: 'cPrecio',   dKey: 'dPrecio',
+  { key: 'precio',   label: 'PRECIO',         rKey: 'rPrecio',   cKey: 'cPrecio',   dKey: 'dPrecio',
     hdr: 'rgba(0,112,192,0.22)',  bg: 'rgba(0,112,192,0.08)',  xlHdr: 'FFCCE0F5', xlBg: 'FFF0F6FD' },
-  { key: 'estimulo', label: 'ASIG. ESTÍMULO',  rKey: 'rEstimulo', cKey: 'cEstimulo', dKey: 'dEstimulo',
+  { key: 'estimulo', label: 'ASIG. ESTÍMULO', rKey: 'rEstimulo', cKey: 'cEstimulo', dKey: 'dEstimulo',
     hdr: 'rgba(0,156,64,0.22)',   bg: 'rgba(0,156,64,0.08)',   xlHdr: 'FFC9EDD8', xlBg: 'FFEDF9F2' },
-  { key: 'cargas',   label: 'CARGAS SS',       rKey: 'rCargas',   cKey: 'cCargas',   dKey: 'dCargas',
+  { key: 'cargas',   label: 'CARGAS SS',      rKey: 'rCargas',   cKey: 'cCargas',   dKey: 'dCargas',
     hdr: 'rgba(192,0,0,0.22)',    bg: 'rgba(192,0,0,0.08)',    xlHdr: 'FFF5CCCC', xlBg: 'FFFCEAEA' },
-  { key: 'provMes',  label: 'PROV. MES',       rKey: 'rProvMes',  cKey: 'cProvMes',  dKey: 'dProvMes',
+  { key: 'provMes',  label: 'PROV. MES',      rKey: 'rProvMes',  cKey: 'cProvMes',  dKey: 'dProvMes',
     hdr: 'rgba(0,176,240,0.22)',  bg: 'rgba(0,176,240,0.08)',  xlHdr: 'FFC7EDF9', xlBg: 'FFEAF7FD' },
-  { key: 'provCcss', label: 'PROV. CCSS MES',  rKey: 'rProvCcss', cKey: 'cProvCcss', dKey: 'dProvCcss',
+  { key: 'provCcss', label: 'PROV. CCSS MES', rKey: 'rProvCcss', cKey: 'cProvCcss', dKey: 'dProvCcss',
     hdr: 'rgba(0,70,127,0.22)',   bg: 'rgba(0,70,127,0.08)',   xlHdr: 'FFCCDDED', xlBg: 'FFEAF2F8' },
-  { key: 'total',    label: 'COSTO TOTAL',     rKey: 'rTotal',    cKey: 'cTotal',    dKey: 'dTotal',
+  { key: 'total',    label: 'COSTO TOTAL',    rKey: 'rTotal',    cKey: 'cTotal',    dKey: 'dTotal',
     hdr: 'rgba(64,64,64,0.18)',   bg: 'rgba(64,64,64,0.07)',   xlHdr: 'FFDCDCDC', xlBg: 'FFF2F2F2' },
+];
+
+// Panel de mapeo: qué cuenta/concepto alimenta cada categoría
+const ACCOUNT_MAP_DISPLAY = [
+  { cat: 'PRECIO',         entries: [{ code: '5208001', type: 'cuenta' }] },
+  { cat: 'ASIG. ESTÍMULO', entries: [{ code: '5208006', type: 'cuenta' }] },
+  { cat: 'CARGAS SS',      entries: [{ code: '5208005', type: 'cuenta' }] },
+  { cat: 'PROV. MES',      entries: [{ code: '5208007', type: 'cuenta' }, { code: '5208004', type: 'cuenta' }, { code: '5208003', type: 'cuenta' }] },
+  { cat: 'PROV. CCSS MES', entries: [
+    { code: '3572', type: 'concepto', sign: '+' },
+    { code: '3672', type: 'concepto', sign: '+' },
+    { code: '7292', type: 'concepto', sign: '+' },
+    { code: '3576', type: 'concepto', sign: '−' },
+    { code: '3676', type: 'concepto', sign: '−' },
+    { code: '7289', type: 'concepto', sign: '−' },
+  ]},
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -47,12 +85,10 @@ function esc(str) {
 }
 
 function normCCName(v) {
-  // Normaliza para matching tolerante: trim + lower + espacios + sin acentos.
-  // Necesario porque CONTA suele tener "ADMINISTRACION" y Rendimiento "Administración".
   return String(v ?? '')
     .trim()
     .toLowerCase()
-    .normalize('NFD').replace(/[̀-ͯ]/g, '')  // strip diacríticos
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/\s+/g, ' ')
     || null;
 }
@@ -65,17 +101,6 @@ const THRESHOLD = 0.01;
 const hasDiff   = d => d !== null && Math.abs(d) > THRESHOLD;
 const diffStyle = d => hasDiff(d) ? 'color:var(--color-danger);font-weight:600;' : '';
 
-// Construye índice: id_concepto → { catKey, sign }
-function buildConceptIndex(conceptConfig) {
-  const idx = {};
-  for (const [catKey, entries] of Object.entries(conceptConfig)) {
-    for (const e of entries) {
-      idx[String(e.code).trim()] = { catKey, sign: e.sign };
-    }
-  }
-  return idx;
-}
-
 // ── runRendVsAsiento ──────────────────────────────────────────────────────────
 
 export function runRendVsAsiento(rendRows, _tabRows, mapping) {
@@ -83,13 +108,10 @@ export function runRendVsAsiento(rendRows, _tabRows, mapping) {
   const contaRows = mapping.contaRows || [];
   const ccXEeRows = mapping.ccXEeRows || [];
 
-  if (!rendRows?.length)   return { error: 'No hay datos del Reporte de Rendimiento.' };
-  if (!contaRows?.length)  return { error: 'No hay datos de Contabilidad Desglosada (CONTA).' };
+  if (!rendRows?.length)  return { error: 'No hay datos del Reporte de Rendimiento.' };
+  if (!contaRows?.length) return { error: 'No hay datos de Contabilidad Desglosada (CONTA).' };
 
-  const conceptConfig  = mapping.conceptGrouping || DEFAULT_CONCEPT_CONFIG;
-  const conceptByCode  = buildConceptIndex(conceptConfig);
-
-  // Mapa de override por ID_EMPLEADO → CENTRO_COSTO (si CC x Empleado fue cargado)
+  // Mapa de override por ID_EMPLEADO → CENTRO_COSTO (CC x Empleado opcional)
   const ccOverride = new Map();
   for (const r of ccXEeRows) {
     const emp = norm(r.id_empleado);
@@ -98,34 +120,57 @@ export function runRendVsAsiento(rendRows, _tabRows, mapping) {
   }
   const hasOverride = ccOverride.size > 0;
 
-  // ── Agrupar CONTA por CC × categoría ──────────────────────────────────────
-  // Para cada fila: clasificar por id_concepto, sumar (debe - haber) * sign
-  const contaGroups = new Map();  // nameKey → bucket
-  let descartadasSinConcepto = 0;
+  // ── Agrupar CONTA por CC × categoría ─────────────────────────────────────
+  const contaGroups  = new Map();   // nameKey → bucket
+  const accountNames = new Map();   // cuenta_contab code → N_CUENTA_CONTABLE
+  let noCategorizadas = 0;
 
   for (const row of contaRows) {
-    // Resolver CC: override por ID_EMPLEADO tiene prioridad si CC x EE fue cargado
     const empleado = norm(row.id_empleado);
     const ccRaw    = hasOverride && empleado && ccOverride.has(empleado)
       ? ccOverride.get(empleado)
       : norm(row.cc_nombre);
     if (!ccRaw) continue;
 
-    const nameKey = normCCName(ccRaw);
-    if (!nameKey) continue;
+    const origKey = normCCName(ccRaw);
+    if (!origKey) continue;
 
-    const cat = conceptByCode[String(row.id_concepto).trim()];
-    if (!cat) { descartadasSinConcepto++; continue; }
+    // Aplicar redirect de CC (Finanzas → Servicios Legales, Facilities → Administración)
+    const nameKey = CC_REDIR[origKey] ?? origKey;
 
     if (!contaGroups.has(nameKey)) {
+      const wasRedirected = nameKey !== origKey;
       contaGroups.set(nameKey, {
-        ccLabel: ccRaw,  // primer label visto para mostrar en la tabla
+        ccLabel: wasRedirected ? (CC_REDIR_LABEL[nameKey] ?? ccRaw) : ccRaw,
         precio: 0, estimulo: 0, cargas: 0, provMes: 0, provCcss: 0,
       });
     }
-    const g = contaGroups.get(nameKey);
+    const g     = contaGroups.get(nameKey);
     const valor = (toNum(row.debe) ?? 0) - (toNum(row.haber) ?? 0);
-    g[cat.catKey] += valor * cat.sign;
+
+    // Colectar nombres de cuentas para el panel de mapeo
+    const cuentaCode = norm(row.cuenta_contab);
+    if (cuentaCode && row.n_cuenta_contable && !accountNames.has(cuentaCode)) {
+      accountNames.set(cuentaCode, norm(row.n_cuenta_contable));
+    }
+
+    // Clasificar por CUENTA_CONTAB → categorías PRECIO / ESTÍMULO / CARGAS / PROV. MES
+    const catByAccount = cuentaCode ? CUENTA_CONTAB_CATS[cuentaCode] : null;
+    if (catByAccount) {
+      g[catByAccount] += valor;
+    }
+
+    // Clasificar por ID_CONCEPTO → PROV. CCSS MES
+    const concepto = norm(row.id_concepto);
+    const esProvCcssPos = PROV_CCSS_POS.has(concepto);
+    const esProvCcssNeg = PROV_CCSS_NEG.has(concepto);
+    if (esProvCcssPos) {
+      g.provCcss += valor;
+    } else if (esProvCcssNeg) {
+      g.provCcss -= valor;
+    }
+
+    if (!catByAccount && !esProvCcssPos && !esProvCcssNeg) noCategorizadas++;
   }
 
   // COSTO TOTAL por grupo = suma de las 5 categorías
@@ -134,7 +179,7 @@ export function runRendVsAsiento(rendRows, _tabRows, mapping) {
   }
 
   // ── Cruzar con Rendimiento ────────────────────────────────────────────────
-  const rows = [];
+  const rows      = [];
   const matchedCCs = new Set();
 
   for (const rRow of rendRows) {
@@ -154,8 +199,6 @@ export function runRendVsAsiento(rendRows, _tabRows, mapping) {
     const conta   = nameKey ? contaGroups.get(nameKey) : null;
     if (conta) matchedCCs.add(nameKey);
 
-    // Usar `!= null` (no estricto) para descartar tanto null como undefined.
-    // Si conta es null, conta?.precio devuelve undefined y queremos retornar null, no NaN.
     const diff = (c, r) => (c != null && r != null) ? c - r : null;
 
     rows.push({
@@ -177,7 +220,7 @@ export function runRendVsAsiento(rendRows, _tabRows, mapping) {
     });
   }
 
-  // CCs presentes en CONTA pero ausentes del Rendimiento (huérfanos)
+  // CCs solo en CONTA (sin contraparte en Rendimiento)
   const ccsSoloEnConta = [];
   for (const [nameKey, g] of contaGroups) {
     if (!matchedCCs.has(nameKey)) {
@@ -193,22 +236,24 @@ export function runRendVsAsiento(rendRows, _tabRows, mapping) {
     }
   }
 
-  // ── Summary ────────────────────────────────────────────────────────────────
   const summary = {
-    total:                 rows.length,
-    sinContaData:          rows.filter(r => r.sinContaData).length,
-    ccsSoloEnConta:        ccsSoloEnConta.length,
-    descartadasSinConcepto,
-    difPrecio:             rows.filter(r => hasDiff(r.dPrecio)).length,
-    difEstimulo:           rows.filter(r => hasDiff(r.dEstimulo)).length,
-    difCargas:             rows.filter(r => hasDiff(r.dCargas)).length,
-    difProvMes:            rows.filter(r => hasDiff(r.dProvMes)).length,
-    difProvCcss:           rows.filter(r => hasDiff(r.dProvCcss)).length,
-    difTotal:              rows.filter(r => hasDiff(r.dTotal)).length,
-    usoCCXEE:              hasOverride,
+    total:          rows.length,
+    sinContaData:   rows.filter(r => r.sinContaData).length,
+    ccsSoloEnConta: ccsSoloEnConta.length,
+    noCategorizadas,
+    difPrecio:   rows.filter(r => hasDiff(r.dPrecio)).length,
+    difEstimulo: rows.filter(r => hasDiff(r.dEstimulo)).length,
+    difCargas:   rows.filter(r => hasDiff(r.dCargas)).length,
+    difProvMes:  rows.filter(r => hasDiff(r.dProvMes)).length,
+    difProvCcss: rows.filter(r => hasDiff(r.dProvCcss)).length,
+    difTotal:    rows.filter(r => hasDiff(r.dTotal)).length,
+    usoCCXEE:    hasOverride,
   };
 
-  return { summary, rows, ccsSoloEnConta, meta: { conceptConfig, hasOverride } };
+  return {
+    summary, rows, ccsSoloEnConta,
+    meta: { accountNames: Object.fromEntries(accountNames), hasOverride },
+  };
 }
 
 // ── summarizeRendVsAsiento ────────────────────────────────────────────────────
@@ -228,11 +273,7 @@ export function summarizeRendVsAsiento(results) {
       + (s.ccsSoloEnConta > 0 ? ` · ${s.ccsSoloEnConta} CCs sólo en CONTA` : ''),
     insights: COLS.map(c => {
       const k = `dif${c.key.charAt(0).toUpperCase()}${c.key.slice(1)}`;
-      return {
-        type:  s[k] > 0 ? 'warning' : 'success',
-        label: `diferencias ${c.label}`,
-        value: s[k],
-      };
+      return { type: s[k] > 0 ? 'warning' : 'success', label: `diferencias ${c.label}`, value: s[k] };
     }),
   };
 }
@@ -247,19 +288,87 @@ export function renderRendVsAsientoResults(results, container) {
     return;
   }
 
-  const { rows, ccsSoloEnConta, summary } = results;
+  const { rows, ccsSoloEnConta, summary, meta } = results;
 
   if (!rows || rows.length === 0) {
     container.innerHTML = `<p class="text-muted" style="padding:var(--sp-4);">Sin datos.</p>`;
     return;
   }
 
-  // Acumuladores para fila de totales
+  const accountNames = meta?.accountNames || {};
+
+  // ── Panel de cuentas utilizadas ───────────────────────────────────────────
+  let accountMapSortCol = 'cat';  // 'cat' | 'code' | 'name'
+  let accountMapSortAsc = true;
+
+  const buildAccountMapRows = () => {
+    const flat = [];
+    for (const { cat, entries } of ACCOUNT_MAP_DISPLAY) {
+      for (const e of entries) {
+        const name = e.type === 'cuenta'
+          ? (accountNames[e.code] || '')
+          : `(por ID_CONCEPTO)`;
+        const sign = e.sign || '';
+        flat.push({ cat, code: `${sign}${e.code}`, name, type: e.type, sign });
+      }
+    }
+    return flat.sort((a, b) => {
+      let va = a[accountMapSortCol === 'code' ? 'code' : accountMapSortCol === 'name' ? 'name' : 'cat'];
+      let vb = b[accountMapSortCol === 'code' ? 'code' : accountMapSortCol === 'name' ? 'name' : 'cat'];
+      const res = String(va).localeCompare(String(vb), 'es');
+      return accountMapSortAsc ? res : -res;
+    });
+  };
+
+  const buildAccountMapHtml = () => {
+    const mapRows = buildAccountMapRows();
+    const thStyle = col => `
+      cursor:pointer;user-select:none;padding:4px 8px;
+      background:var(--color-bg-subtle);border:1px solid var(--color-border);
+      text-align:left;font-size:var(--text-sm);white-space:nowrap;
+    `;
+    const arrow = col => accountMapSortCol === col ? (accountMapSortAsc ? ' ▲' : ' ▼') : '';
+    return `
+      <table style="border-collapse:collapse;font-size:var(--text-sm);width:100%;">
+        <thead>
+          <tr>
+            <th data-sort="cat"  style="${thStyle('cat')} ">Categoría${arrow('cat')}</th>
+            <th data-sort="code" style="${thStyle('code')}">Código${arrow('code')}</th>
+            <th data-sort="name" style="${thStyle('name')}">Nombre (CONTA)${arrow('name')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${mapRows.map(r => `
+            <tr>
+              <td style="padding:3px 8px;border:1px solid var(--color-border);">${esc(r.cat)}</td>
+              <td style="padding:3px 8px;border:1px solid var(--color-border);font-family:monospace;color:${r.sign === '−' ? 'var(--color-danger)' : r.sign === '+' ? 'var(--color-success,green)' : 'inherit'};">${esc(r.code)}</td>
+              <td style="padding:3px 8px;border:1px solid var(--color-border);color:var(--color-text-muted);">${esc(r.name)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+  };
+
+  // ── Tabla principal (sortable) ────────────────────────────────────────────
+  let sortCol = null;
+  let sortAsc = true;
+
+  const sortRows = (arr) => {
+    if (!sortCol) return arr;
+    return [...arr].sort((a, b) => {
+      const va = a[sortCol], vb = b[sortCol];
+      if (va === null && vb === null) return 0;
+      if (va === null) return sortAsc ? 1 : -1;
+      if (vb === null) return sortAsc ? -1 : 1;
+      const res = typeof va === 'string' ? va.localeCompare(vb, 'es') : va - vb;
+      return sortAsc ? res : -res;
+    });
+  };
+
+  // Acumuladores para totales
   const totals = {};
-  for (const c of COLS) {
-    totals[c.rKey] = 0;
-    totals[c.cKey] = 0;
-  }
+  for (const c of COLS) { totals[c.rKey] = 0; totals[c.cKey] = 0; }
   for (const r of rows) {
     for (const c of COLS) {
       totals[c.rKey] += r[c.rKey] ?? 0;
@@ -267,58 +376,65 @@ export function renderRendVsAsientoResults(results, container) {
     }
   }
 
-  // ── Encabezados ───────────────────────────────────────────────────────────
+  const buildTbody = () => {
+    const sorted = sortRows(rows);
+    const arrow = col => sortCol === col ? (sortAsc ? ' ▲' : ' ▼') : '';
+
+    const dataRows = sorted.map(r => {
+      const cells = COLS.map(c => `
+        <td style="text-align:right;background:${c.bg};">${fmt(r[c.rKey])}</td>
+        <td style="text-align:right;background:${c.bg};">${fmt(r[c.cKey])}</td>
+        <td style="text-align:right;background:${c.bg};${diffStyle(r[c.dKey])}">${fmt(r[c.dKey])}</td>
+      `).join('');
+      const rowStyle = r.sinContaData ? ' style="opacity:0.55;"' : '';
+      return `
+        <tr${rowStyle}>
+          <td style="white-space:nowrap;font-family:monospace;">${esc(r.ccCode)}</td>
+          <td style="white-space:nowrap;">${esc(r.ccName)}</td>
+          ${cells}
+        </tr>
+      `;
+    }).join('');
+
+    const totRow = COLS.map(c => {
+      const d = totals[c.cKey] - totals[c.rKey];
+      return `
+        <td style="text-align:right;background:${c.hdr};font-weight:600;">${fmt(totals[c.rKey])}</td>
+        <td style="text-align:right;background:${c.hdr};font-weight:600;">${fmt(totals[c.cKey])}</td>
+        <td style="text-align:right;background:${c.hdr};font-weight:600;${diffStyle(d)}">${fmt(d)}</td>
+      `;
+    }).join('');
+
+    return `
+      <tbody id="js-rva-tbody">
+        ${dataRows}
+        <tr style="background:var(--color-surface);">
+          <td colspan="2" style="font-weight:600;white-space:nowrap;">TOTAL GENERAL</td>
+          ${totRow}
+        </tr>
+      </tbody>
+    `;
+  };
+
+  const buildTheadTr2 = () => {
+    const arrow = col => sortCol === col ? (sortAsc ? ' ▲' : ' ▼') : '';
+    return COLS.map(c => `
+      <th data-sort="${c.rKey}" style="text-align:right;background:${c.hdr};cursor:pointer;user-select:none;white-space:nowrap;">Rend${arrow(c.rKey)}</th>
+      <th data-sort="${c.cKey}" style="text-align:right;background:${c.hdr};cursor:pointer;user-select:none;white-space:nowrap;">CONTA${arrow(c.cKey)}</th>
+      <th data-sort="${c.dKey}" style="text-align:right;background:${c.hdr};cursor:pointer;user-select:none;"><strong>CTRL</strong><br><small style="font-weight:400;white-space:nowrap;">CONTA−Rend${arrow(c.dKey)}</small></th>
+    `).join('');
+  };
+
   const hdr1 = COLS.map(c =>
     `<th colspan="3" style="text-align:center;background:${c.hdr};">${esc(c.label)}</th>`
   ).join('');
 
-  const hdr2 = COLS.map(c => `
-    <th style="text-align:right;background:${c.hdr};">Rend</th>
-    <th style="text-align:right;background:${c.hdr};">CONTA</th>
-    <th style="text-align:right;background:${c.hdr};"><strong>CTRL</strong><br>
-      <small style="font-weight:400;white-space:nowrap;">CONTA−Rend</small></th>
-  `).join('');
-
-  // ── Filas de datos ─────────────────────────────────────────────────────────
-  const dataRows = rows.map(r => {
-    const cells = COLS.map(c => `
-      <td style="text-align:right;background:${c.bg};">${fmt(r[c.rKey])}</td>
-      <td style="text-align:right;background:${c.bg};">${fmt(r[c.cKey])}</td>
-      <td style="text-align:right;background:${c.bg};${diffStyle(r[c.dKey])}">${fmt(r[c.dKey])}</td>
-    `).join('');
-    const rowStyle = r.sinContaData ? ' style="opacity:0.55;"' : '';
-    return `
-      <tr${rowStyle}>
-        <td style="white-space:nowrap;font-family:monospace;">${esc(r.ccCode)}</td>
-        <td style="white-space:nowrap;">${esc(r.ccName)}</td>
-        ${cells}
-      </tr>
-    `;
-  }).join('');
-
-  // ── Fila de totales ────────────────────────────────────────────────────────
-  const totRow = COLS.map(c => {
-    const d = totals[c.cKey] - totals[c.rKey];
-    return `
-      <td style="text-align:right;background:${c.hdr};font-weight:600;">${fmt(totals[c.rKey])}</td>
-      <td style="text-align:right;background:${c.hdr};font-weight:600;">${fmt(totals[c.cKey])}</td>
-      <td style="text-align:right;background:${c.hdr};font-weight:600;${diffStyle(d)}">${fmt(d)}</td>
-    `;
-  }).join('');
-
-  // ── CCs sólo en CONTA (sin contraparte en Rendimiento) ────────────────────
+  // ── CCs sólo en CONTA ─────────────────────────────────────────────────────
   let orphansHtml = '';
   if (ccsSoloEnConta && ccsSoloEnConta.length > 0) {
     const orphanRows = ccsSoloEnConta.map(o => {
-      const cells = COLS.map(c => `
-        <td style="text-align:right;background:${c.bg};">${fmt(o[c.cKey])}</td>
-      `).join('');
-      return `
-        <tr>
-          <td>${esc(o.ccName)}</td>
-          ${cells}
-        </tr>
-      `;
+      const cells = COLS.map(c => `<td style="text-align:right;background:${c.bg};">${fmt(o[c.cKey])}</td>`).join('');
+      return `<tr><td>${esc(o.ccName)}</td>${cells}</tr>`;
     }).join('');
     const orphanHeaders = COLS.map(c =>
       `<th style="text-align:right;background:${c.hdr};">${esc(c.label)}</th>`
@@ -326,70 +442,105 @@ export function renderRendVsAsientoResults(results, container) {
     orphansHtml = `
       <details open style="margin-top:var(--sp-4);">
         <summary style="cursor:pointer;font-weight:var(--fw-semibold);color:var(--color-warning);margin-bottom:var(--sp-2);">
-          ⚠ ${ccsSoloEnConta.length} CC${ccsSoloEnConta.length !== 1 ? 's' : ''} en CONTA sin contraparte en Rendimiento
+          ▼ ⚠ ${ccsSoloEnConta.length} CC${ccsSoloEnConta.length !== 1 ? 's' : ''} en CONTA sin contraparte en Rendimiento
         </summary>
         <div style="overflow-x:auto;">
           <table class="data-table data-table--compact">
             <thead>
               <tr>
-                <th>Centro de Costo (sólo CONTA)</th>
-                ${orphanHeaders}
+                <th>Centro de Costo (sólo CONTA)</th>${orphanHeaders}
               </tr>
             </thead>
-            <tbody>
-              ${orphanRows}
-            </tbody>
+            <tbody>${orphanRows}</tbody>
           </table>
         </div>
       </details>
     `;
   }
 
-  // ── Badges informativos ───────────────────────────────────────────────────
+  // ── Badges ────────────────────────────────────────────────────────────────
   const badges = [];
-  if (summary?.usoCCXEE) {
-    badges.push(`<span class="badge badge--info" style="margin-right:var(--sp-2);">↺ CC x Empleado aplicado</span>`);
-  }
-  if (summary?.descartadasSinConcepto > 0) {
-    badges.push(`<span class="badge badge--warning" style="margin-right:var(--sp-2);">${summary.descartadasSinConcepto} filas de CONTA con ID_CONCEPTO no categorizado</span>`);
-  }
+  if (summary?.usoCCXEE) badges.push(`<span class="badge badge--info">↺ CC x Empleado aplicado</span>`);
+  if (summary?.noCategorizadas > 0) badges.push(`<span class="badge badge--warning">${summary.noCategorizadas} filas CONTA no categorizadas</span>`);
   const badgesHtml = badges.length
-    ? `<div style="margin-bottom:var(--sp-2);font-size:var(--text-sm);">${badges.join('')}</div>`
+    ? `<div style="margin-bottom:var(--sp-2);font-size:var(--text-sm);display:flex;gap:var(--sp-2);">${badges.join('')}</div>`
     : '';
 
+  // ── Render final ─────────────────────────────────────────────────────────
+  container.innerHTML = '';
+
+  // Botón exportar
   const exportBtn = document.createElement('div');
   exportBtn.style.cssText = 'display:flex;justify-content:flex-end;margin-bottom:var(--sp-2);';
   exportBtn.innerHTML = `<button type="button" id="js-rva-export" class="btn btn--ghost btn--sm">⬇ Exportar a Excel</button>`;
+  container.appendChild(exportBtn);
 
+  // Panel de cuentas
+  const accountPanel = document.createElement('details');
+  accountPanel.style.cssText = 'margin-bottom:var(--sp-3);';
+  accountPanel.innerHTML = `
+    <summary style="cursor:pointer;font-size:var(--text-sm);font-weight:var(--fw-semibold);color:var(--color-primary);list-style:none;display:flex;align-items:center;gap:var(--sp-2);user-select:none;">
+      ▸ Cuentas y conceptos utilizados
+    </summary>
+    <div style="margin-top:var(--sp-2);padding:var(--sp-3);background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);overflow-x:auto;" id="js-rva-account-map">
+      ${buildAccountMapHtml()}
+    </div>
+  `;
+  container.appendChild(accountPanel);
+
+  // Tabla principal
   const tableWrap = document.createElement('div');
   tableWrap.style.overflowX = 'auto';
   tableWrap.innerHTML = `
     ${badgesHtml}
-    <table class="data-table data-table--compact">
+    <table class="data-table data-table--compact" id="js-rva-table">
       <thead>
         <tr>
-          <th rowspan="2" style="white-space:nowrap;">CC</th>
-          <th rowspan="2">Centro de Costo</th>
+          <th rowspan="2" data-sort="ccCode" style="cursor:pointer;user-select:none;white-space:nowrap;">CC</th>
+          <th rowspan="2" data-sort="ccName" style="cursor:pointer;user-select:none;">Centro de Costo</th>
           ${hdr1}
         </tr>
-        <tr>
-          ${hdr2}
+        <tr id="js-rva-hdr2">
+          ${buildTheadTr2()}
         </tr>
       </thead>
-      <tbody>
-        ${dataRows}
-        <tr style="background:var(--color-surface);">
-          <td colspan="2" style="font-weight:600;white-space:nowrap;">TOTAL GENERAL</td>
-          ${totRow}
-        </tr>
-      </tbody>
+      ${buildTbody()}
     </table>
     ${orphansHtml}
   `;
-
-  container.innerHTML = '';
-  container.appendChild(exportBtn);
   container.appendChild(tableWrap);
+
+  // Eventos: sort en tabla principal
+  tableWrap.querySelectorAll('th[data-sort]').forEach(th => {
+    th.addEventListener('click', () => {
+      const col = th.dataset.sort;
+      if (sortCol === col) sortAsc = !sortAsc;
+      else { sortCol = col; sortAsc = true; }
+      // Re-render tbody y encabezados de fila 2
+      const table = tableWrap.querySelector('#js-rva-table');
+      const oldTbody = table.querySelector('#js-rva-tbody');
+      const newTbody = document.createElement('tbody');
+      newTbody.id = 'js-rva-tbody';
+      newTbody.innerHTML = buildTbody().replace('<tbody id="js-rva-tbody">', '').replace('</tbody>', '');
+      oldTbody.replaceWith(newTbody);
+      tableWrap.querySelector('#js-rva-hdr2').innerHTML = buildTheadTr2();
+      // Re-attach sort listeners en los nuevos headers
+      tableWrap.querySelectorAll('th[data-sort]').forEach(th2 => {
+        th2.addEventListener('click', th2._sortFn || (() => {}));
+      });
+    });
+  });
+
+  // Eventos: sort en panel de cuentas
+  const mapDiv = accountPanel.querySelector('#js-rva-account-map');
+  mapDiv?.addEventListener('click', e => {
+    const th = e.target.closest('th[data-sort]');
+    if (!th) return;
+    const col = th.dataset.sort;
+    if (accountMapSortCol === col) accountMapSortAsc = !accountMapSortAsc;
+    else { accountMapSortCol = col; accountMapSortAsc = true; }
+    mapDiv.innerHTML = buildAccountMapHtml();
+  });
 
   container.querySelector('#js-rva-export')?.addEventListener('click', () => exportRendVsAsientoToXlsx(results));
 }
@@ -441,24 +592,19 @@ async function exportRendVsAsientoToXlsx(results) {
   ];
 
   const solidFill = argb => ({ type: 'pattern', pattern: 'solid', fgColor: { argb } });
-  const base = { name: 'Calibri', size: 10 };
-  const bold = { ...base, bold: true };
-  const numFmt = '#,##0.00';
-  const RED = 'FFCC0000';
+  const base    = { name: 'Calibri', size: 10 };
+  const bold    = { ...base, bold: true };
+  const numFmt  = '#,##0.00';
+  const RED     = 'FFCC0000';
   const GRAY_HDR = 'FFE0E0E0';
 
-  // Fila 1: nombres de categorías
-  const hdr1Values = ['CC', 'Centro de Costo', ...COLS.flatMap(c => [c.label, null, null])];
-  const r1 = ws.addRow(hdr1Values);
+  const r1 = ws.addRow(['CC', 'Centro de Costo', ...COLS.flatMap(c => [c.label, null, null])]);
   r1.height = 22;
-
   ws.mergeCells('A1:A2');
   ws.mergeCells('B1:B2');
-
   COLS.forEach((c, i) => {
     const startCol = 3 + i * 3;
-    const endCol   = startCol + 2;
-    ws.mergeCells(1, startCol, 1, endCol);
+    ws.mergeCells(1, startCol, 1, startCol + 2);
     const cell = r1.getCell(startCol);
     cell.value = c.label;
     cell.font      = { ...bold };
@@ -466,20 +612,15 @@ async function exportRendVsAsientoToXlsx(results) {
     cell.fill      = solidFill(c.xlHdr);
     cell.border    = { bottom: { style: 'thin', color: { argb: 'FFB0B0B0' } } };
   });
-
   ['A1', 'B1'].forEach(addr => {
     const cell = ws.getCell(addr);
     cell.font      = { ...bold };
     cell.alignment = { horizontal: 'center', vertical: 'middle' };
     cell.fill      = solidFill(GRAY_HDR);
-    cell.border    = { bottom: { style: 'thin', color: { argb: 'FFB0B0B0' } } };
   });
 
-  // Fila 2: sub-encabezados Rend / CONTA / CTRL
-  const hdr2Values = ['', '', ...COLS.flatMap(() => ['Rend', 'CONTA', 'CTRL\nCONTA−Rend'])];
-  const r2 = ws.addRow(hdr2Values);
+  const r2 = ws.addRow(['', '', ...COLS.flatMap(() => ['Rend', 'CONTA', 'CTRL\nCONTA−Rend'])]);
   r2.height = 28;
-
   COLS.forEach((c, i) => {
     const startCol = 3 + i * 3;
     for (let col = startCol; col <= startCol + 2; col++) {
@@ -495,16 +636,8 @@ async function exportRendVsAsientoToXlsx(results) {
 
   ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 2 }];
 
-  // Filas de datos
   for (const r of rows) {
-    const values = [
-      r.ccCode, r.ccName,
-      ...COLS.flatMap(c => [r[c.rKey], r[c.cKey], r[c.dKey]]),
-    ];
-    const dr = ws.addRow(values);
-    dr.getCell(1).font = { ...base };
-    dr.getCell(2).font = { ...base };
-
+    const dr = ws.addRow([r.ccCode, r.ccName, ...COLS.flatMap(c => [r[c.rKey], r[c.cKey], r[c.dKey]])]);
     COLS.forEach((c, i) => {
       const startCol = 3 + i * 3;
       for (let col = startCol; col <= startCol + 2; col++) {
@@ -514,37 +647,24 @@ async function exportRendVsAsientoToXlsx(results) {
         cell.fill      = solidFill(c.xlBg);
         cell.font      = { ...base };
       }
-      const dCell = dr.getCell(startCol + 2);
-      const dVal  = r[c.dKey];
+      const dVal = r[c.dKey];
       if (dVal !== null && Math.abs(dVal) > 0.01) {
-        dCell.font = { ...bold, color: { argb: RED } };
+        dr.getCell(startCol + 2).font = { ...bold, color: { argb: RED } };
       }
     });
-
     if (r.sinContaData) dr.eachCell(cell => { cell.font = { ...cell.font, color: { argb: 'FF999999' } }; });
   }
 
-  // Fila de totales
   const totals = {};
   for (const c of COLS) { totals[c.rKey] = 0; totals[c.cKey] = 0; }
   for (const r of rows) {
-    for (const c of COLS) {
-      totals[c.rKey] += r[c.rKey] ?? 0;
-      totals[c.cKey] += r[c.cKey] ?? 0;
-    }
+    for (const c of COLS) { totals[c.rKey] += r[c.rKey] ?? 0; totals[c.cKey] += r[c.cKey] ?? 0; }
   }
-
-  const totValues = [
-    'TOTAL GENERAL', '',
-    ...COLS.flatMap(c => {
-      const d = totals[c.cKey] - totals[c.rKey];
-      return [totals[c.rKey], totals[c.cKey], d];
-    }),
-  ];
-  const tr = ws.addRow(totValues);
+  const tr = ws.addRow(['TOTAL GENERAL', '', ...COLS.flatMap(c => {
+    const d = totals[c.cKey] - totals[c.rKey];
+    return [totals[c.rKey], totals[c.cKey], d];
+  })]);
   tr.getCell(1).font = { ...bold };
-  tr.getCell(2).font = { ...bold };
-
   COLS.forEach((c, i) => {
     const startCol = 3 + i * 3;
     for (let col = startCol; col <= startCol + 2; col++) {
@@ -555,21 +675,16 @@ async function exportRendVsAsientoToXlsx(results) {
       cell.font      = { ...bold };
       cell.border    = { top: { style: 'medium', color: { argb: 'FFB0B0B0' } } };
     }
-    const dCell = tr.getCell(startCol + 2);
     const d = totals[c.cKey] - totals[c.rKey];
-    if (Math.abs(d) > 0.01) dCell.font = { ...bold, color: { argb: RED } };
+    if (Math.abs(d) > 0.01) tr.getCell(startCol + 2).font = { ...bold, color: { argb: RED } };
   });
 
-  // CCs huérfanos (sólo en CONTA) en hoja aparte
   if (ccsSoloEnConta && ccsSoloEnConta.length > 0) {
     const ws2 = wb.addWorksheet('CCs sólo en CONTA');
     ws2.columns = [{ width: 30 }, ...COLS.map(() => ({ width: 18 }))];
     const h2 = ws2.addRow(['Centro de Costo', ...COLS.map(c => c.label)]);
     h2.font = { ...bold };
-    h2.eachCell(cell => {
-      cell.fill      = solidFill(GRAY_HDR);
-      cell.alignment = { horizontal: 'center', vertical: 'middle' };
-    });
+    h2.eachCell(cell => { cell.fill = solidFill(GRAY_HDR); cell.alignment = { horizontal: 'center' }; });
     for (const o of ccsSoloEnConta) {
       const dr = ws2.addRow([o.ccName, ...COLS.map(c => o[c.cKey])]);
       for (let col = 2; col <= COLS.length + 1; col++) {
