@@ -55,6 +55,12 @@ import {
   summarizeRendVsTabu,
 } from './rendVsTabu.js';
 
+import {
+  runRendVsAsiento,
+  renderRendVsAsientoResults,
+  summarizeRendVsAsiento,
+} from './rendVsAsiento.js';
+
 export const CONTROL_REGISTRY = {
 
   cat_x_empleados: {
@@ -228,7 +234,7 @@ export const CONTROL_REGISTRY = {
 
   rend_vs_tabu: {
     id:          'rend_vs_tabu',
-    label:       'RendvsTabu',
+    label:       'Rendimiento vs Tabulado',
     description: 'Cruza el Reporte de Rendimiento contra el Tabulado agrupado por centro de costo. '
       + 'Compara PRECIO, ASIG. ESTÍMULO, RETIROS, CARGAS SS, PROV. MES, PROV. CCSS MES y COSTO TOTAL.',
     help: {
@@ -248,6 +254,32 @@ export const CONTROL_REGISTRY = {
     run:           runRendVsTabu,
     summarize:     summarizeRendVsTabu,
     renderResults: renderRendVsTabuResults,
+  },
+
+  rend_vs_asiento: {
+    id:          'rend_vs_asiento',
+    label:       'Rendimiento vs Asiento',
+    description: 'Cruza el Reporte de Rendimiento de M4 contra el Asiento Contable. '
+      + 'Verifica que los importes de cada categoría coincidan con las líneas del Asiento.',
+    help: {
+      what: 'Toma el Reporte de Rendimiento (resumen de costos por CC de M4) y lo contrasta '
+        + 'contra el Asiento Contable correspondiente al período. '
+        + 'Detecta diferencias entre lo registrado en nómina y lo contabilizado.',
+      how: [
+        'Bajá el Reporte de Rendimiento de M4.',
+        'Bajá o exportá el Asiento Contable del período.',
+        'Cargalos cuando te los pida en el Paso 2.',
+        'Ejecutá. Las diferencias se muestran en rojo.',
+      ],
+    },
+    tabRequired: false,
+    additionalFiles: [
+      { key: 'rend',    label: 'Reporte de Rendimiento', fileType: 'rend_file' },
+      { key: 'asiento', label: 'Asiento Contable',       fileType: 'asiento_file' },
+    ],
+    run:           runRendVsAsiento,
+    summarize:     summarizeRendVsAsiento,
+    renderResults: renderRendVsAsientoResults,
   },
 
 };

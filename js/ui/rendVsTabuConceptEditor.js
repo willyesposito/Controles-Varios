@@ -125,7 +125,7 @@ export function renderConceptGroupingEditor(container, tabRows, currentGrouping,
     container.innerHTML = `
       <div style="margin-top:var(--sp-3);padding:var(--sp-3) var(--sp-4);border:1px solid var(--color-border);border-radius:var(--radius-md);background:var(--color-surface);">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--sp-2);gap:var(--sp-3);">
-          <h4 style="margin:0;font-size:var(--text-base);">Agrupación de conceptos — RendvsTabu</h4>
+          <h4 style="margin:0;font-size:var(--text-base);">Agrupación de conceptos — Rendimiento vs Tabulado</h4>
           <button type="button" id="js-rtv-restore" class="btn btn--ghost btn--sm" style="white-space:nowrap;flex-shrink:0;">
             ↺ Restaurar defaults
           </button>

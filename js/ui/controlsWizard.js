@@ -213,7 +213,11 @@ function nextStepHint(state) {
 
 function canGoNext(state) {
   switch (state.step) {
-    case 0: return state.tab !== null;
+    case 0: {
+      const anyTabRequired = state.selectedControls.length === 0
+        || state.selectedControls.some(id => CONTROL_REGISTRY[id]?.tabRequired !== false);
+      return !anyTabRequired || state.tab !== null;
+    }
     case 1: {
       const allFiles = state.selectedControls.length > 0
         && state.selectedControls.every(id => {
@@ -557,7 +561,7 @@ function renderStepControls(container, state, root) {
       <p style="margin:0 0 var(--sp-2);font-weight:var(--fw-semibold);">Ejemplos</p>
       <ul style="margin:0;padding-left:var(--sp-5);line-height:1.6;">
         <li><strong>Brutos:</strong> compara el sueldo del Tabulado con el del reporte de Brutos.</li>
-        <li><strong>RendvsTabu:</strong> compara los conceptos del Tabulado con el reporte de Rendimiento por centro de costo.</li>
+        <li><strong>Rendimiento vs Tabulado:</strong> compara los conceptos del Tabulado con el reporte de Rendimiento por centro de costo.</li>
         <li><strong>Cat x Empleados:</strong> verifica que cada empleado del Tabulado esté activo en el Catálogo de Empleados.</li>
       </ul>
       <p class="text-muted" style="margin:var(--sp-3) 0 0;font-size:0.9em;">
@@ -986,11 +990,13 @@ async function executeControls(state, statusEl) {
       state.clientId, state.period, state.selectedControls, state.notes
     );
 
-    // 2. Guardar el Tabulado
+    // 2. Guardar el Tabulado (si está presente)
     const tab = state.tab;
-    await saveControlRunFile(
-      runId, 'tab_control', tab.fileName, tab.parsedRows, tab.parseMetadata, tab.mapping
-    );
+    if (tab) {
+      await saveControlRunFile(
+        runId, 'tab_control', tab.fileName, tab.parsedRows, tab.parseMetadata, tab.mapping
+      );
+    }
 
     // 3. Guardar config extra del Tabulado (Brutos / GS Pers) si aplica
     const needsTabExtra = state.selectedControls.some(id =>
@@ -1025,7 +1031,7 @@ async function executeControls(state, statusEl) {
 
       // Armar mapping: tab + tabExtraConfig (si aplica) + archivos adicionales + período
       const mapping = {
-        tab:    { ...(tab.mapping || {}), ...state.tabExtraConfig },
+        tab:    { ...(tab?.mapping || {}), ...state.tabExtraConfig },
         period: state.period,
       };
       if (controlId === 'rend_vs_tabu' && state.rendVsTabuGrouping) {
@@ -1033,12 +1039,15 @@ async function executeControls(state, statusEl) {
       }
       for (const fileSpec of ctrl.additionalFiles) {
         const fileData = state.controlFiles[controlId]?.[fileSpec.key];
-        if (fileData) mapping[fileSpec.key] = fileData.mapping || {};
+        if (fileData) {
+          mapping[fileSpec.key]         = fileData.mapping || {};
+          mapping[`${fileSpec.key}Rows`] = fileData.parsedRows || [];
+        }
       }
 
       // Obtener filas: tab + la primera clave de archivos adicionales como "rows primarios"
-      const tabRows    = tab.parsedRows;
-      const primaryKey = ctrl.additionalFiles[0]?.key;
+      const tabRows     = tab?.parsedRows || [];
+      const primaryKey  = ctrl.additionalFiles[0]?.key;
       const primaryRows = state.controlFiles[controlId]?.[primaryKey]?.parsedRows || [];
 
       // Ejecutar

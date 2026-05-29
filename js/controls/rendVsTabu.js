@@ -531,5 +531,5 @@ async function exportRendVsTabuToXlsx(results) {
     if (Math.abs(d) > 0.01) dCell.font = { ...bold, color: { argb: RED } };
   });
 
-  await downloadXlsx(wb, `RendvsTabu_${dateSuffix()}.xlsx`);
+  await downloadXlsx(wb, `RendVsTabulado_${dateSuffix()}.xlsx`);
 }
