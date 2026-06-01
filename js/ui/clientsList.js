@@ -107,6 +107,10 @@ async function reloadList(root) {
       window.location.hash = `#/controls/${client.id}`;
     });
 
+    card.querySelector('.js-checklist-btn').addEventListener('click', () => {
+      window.location.hash = `#/checklist/${client.id}`;
+    });
+
     card.querySelector('.js-run-btn').addEventListener('click', () => {
       window.location.hash = `#/wizard/${client.id}`;
     });
@@ -143,6 +147,7 @@ function renderClientCard(client) {
       <div class="card__footer" style="justify-content:space-between;gap:var(--sp-2);flex-wrap:wrap;">
         <div style="display:flex;gap:var(--sp-2);flex-wrap:wrap;">
           <button class="btn btn--primary btn--sm js-controls-btn">📋 Controles</button>
+          <button class="btn btn--secondary btn--sm js-checklist-btn">📊 Estado mensual</button>
           <button class="btn btn--secondary btn--sm js-run-btn">▶ Cruce nómina</button>
           <button class="btn btn--secondary btn--sm js-groupers-btn">⚙ Agrupadores</button>
         </div>
