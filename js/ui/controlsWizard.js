@@ -433,10 +433,48 @@ function renderStepControls(container, state, root) {
 
     ${buildHelpSection()}
 
+    <div style="display:flex;gap:var(--sp-2);margin-bottom:var(--sp-3);flex-wrap:wrap;">
+      <button class="btn btn--secondary btn--sm" id="js-select-all-ctrls">
+        ✓ Seleccionar todos
+      </button>
+      <button class="btn btn--ghost btn--sm" id="js-clear-ctrls">
+        ✕ Limpiar selección
+      </button>
+      <span class="text-muted" style="font-size:var(--text-sm);align-self:center;">
+        "Seleccionar todos" elige las variantes de Control de cada grupo (no las de Generar Reporte).
+      </span>
+    </div>
+
     <div class="pill-group" id="js-control-pills" style="margin-bottom:var(--sp-3);">
       ${blocksHtml}
     </div>
   `;
+
+  // Botón "Seleccionar todos": selecciona standalones + las variantes "Controlar" de cada grupo
+  container.querySelector('#js-select-all-ctrls').addEventListener('click', () => {
+    const allControlarIds = Object.values(CONTROL_REGISTRY)
+      .filter(c => !c.group || c.group.mode === 'Controlar')
+      .map(c => c.id);
+    state.selectedControls = [...allControlarIds];
+    state.controlFiles = {};
+    for (const id of allControlarIds) state.controlFiles[id] = {};
+    // Expandir todos los grupos que ahora tienen modos activos
+    for (const id of allControlarIds) {
+      const gid = CONTROL_REGISTRY[id]?.group?.id;
+      if (gid) state.expandedGroups.add(gid);
+    }
+    renderStepControls(container, state, root);
+    renderWizardNav(root, state);
+  });
+
+  // Botón "Limpiar selección"
+  container.querySelector('#js-clear-ctrls').addEventListener('click', () => {
+    state.selectedControls = [];
+    state.controlFiles = {};
+    state.expandedGroups = new Set();
+    renderStepControls(container, state, root);
+    renderWizardNav(root, state);
+  });
 
   // Click en sub-pill o en pill standalone: activa/desactiva ese control
   container.querySelectorAll('[data-ctrl]').forEach(pill => {
