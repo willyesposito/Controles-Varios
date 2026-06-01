@@ -6,9 +6,10 @@
 //   - Badges con insights de qué revisar
 //   - Botón "Detalle" que expande para ver las tablas completas
 
-import { getControlRun, getClient, getControlRunResults } from '../db.js';
+import { getControlRun, updateControlRun, getClient, getControlRunResults } from '../db.js';
 import { CONTROL_REGISTRY } from '../controls/registry.js';
 import { periodToLabel }    from '../utils/dates.js';
+import { showToast }        from './toast.js';
 
 export async function renderControlsResults(root, runId) {
   const run = await getControlRun(Number(runId));
@@ -50,14 +51,20 @@ export async function renderControlsResults(root, runId) {
         </div>
       </div>
 
-      <div class="alert alert--info" style="margin-bottom:var(--sp-4);font-size:var(--text-sm);">
+      <div class="alert alert--info" style="margin-bottom:var(--sp-3);font-size:var(--text-sm);">
         Ejecutado el ${esc(createdAt)}
         ${run.notes ? ` &nbsp;·&nbsp; <em>${esc(run.notes)}</em>` : ''}
       </div>
 
+      <div id="js-status-banner" style="margin-bottom:var(--sp-4);"></div>
+
       <div id="js-control-sections"></div>
     </div>
   `;
+
+  // Banner Borrador / Definitivo con toggle
+  const bannerEl = root.querySelector('#js-status-banner');
+  renderRunStatusBanner(bannerEl, run);
 
   const sectionsEl = root.querySelector('#js-control-sections');
 
@@ -113,6 +120,43 @@ export async function renderControlsResults(root, runId) {
     const detailEl = card.querySelector(`#js-ctrl-${CSS.escape(row.controlId)}`);
     ctrl.renderResults(row.results, detailEl);
   }
+}
+
+function renderRunStatusBanner(bannerEl, run) {
+  if (!bannerEl || !run) return;
+
+  const isDef = run.isDefinitive === true;
+  const icon  = isDef ? '✅' : '📝';
+  const title = isDef ? 'Definitivo' : 'Borrador';
+  const desc  = isDef
+    ? 'Este run aparece en el checklist mensual.'
+    : 'Este run no aparece en el checklist hasta que lo marques como definitivo.';
+  const btnLabel = isDef ? '↩ Volver a borrador' : '📌 Marcar como definitivo';
+  const borderCol = isDef ? 'var(--color-match-exact, #00a651)' : 'var(--color-border)';
+  const bgCol = isDef ? 'rgba(0,166,81,0.06)' : 'var(--color-surface)';
+
+  bannerEl.innerHTML = `
+    <div style="padding:var(--sp-3) var(--sp-4);border:1px solid ${borderCol};border-radius:var(--radius-md);background:${bgCol};display:flex;align-items:center;gap:var(--sp-3);">
+      <span style="font-size:1.4em;">${icon}</span>
+      <div style="flex:1;">
+        <strong>${title}</strong>
+        <p class="text-sm text-muted" style="margin:var(--sp-1) 0 0;">${esc(desc)}</p>
+      </div>
+      <button class="btn ${isDef ? 'btn--ghost' : 'btn--primary'} btn--sm" id="js-toggle-definitive">${btnLabel}</button>
+    </div>
+  `;
+
+  bannerEl.querySelector('#js-toggle-definitive').addEventListener('click', async () => {
+    const newValue = !run.isDefinitive;
+    try {
+      await updateControlRun(run.id, { isDefinitive: newValue });
+      run.isDefinitive = newValue;
+      renderRunStatusBanner(bannerEl, run);
+      showToast(newValue ? '✅ Marcado como definitivo' : '↩ Vuelto a borrador', 'success');
+    } catch (err) {
+      showToast(`Error: ${err.message}`, 'danger');
+    }
+  });
 }
 
 function statusIcon(status) {
