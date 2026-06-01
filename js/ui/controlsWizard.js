@@ -8,6 +8,7 @@
 import {
   getClient,
   createControlRun,
+  updateControlRun,
   saveControlRunFile,
   saveControlRunResults,
   getFileProfile,
@@ -85,8 +86,10 @@ export async function renderControlsWizard(root, clientId) {
     // conceptos PROV CCSS y redirects de CC. Editable por el usuario en el paso Archivos.
     rvaConfig:                 savedRvaConfig?.mapping || JSON.parse(JSON.stringify(DEFAULT_RVA_CONFIG)),
     expandedGroups:            new Set(),  // grupos de controles cuyo panel de modos está abierto
-    lastRunId:                 null,       // runId del último execute exitoso
+    lastRunId:                 null,       // runId del último execute exitoso (null si quickRun)
     lastRunResults:            null,       // { [controlId]: results } del último execute exitoso
+    lastRunIsDefinitive:       false,      // si el último run está marcado como definitivo
+    quickRun:                  false,      // si está marcado, no se guarda nada (modo prueba)
   };
 
   root.innerHTML = `
@@ -961,7 +964,16 @@ function renderStepExecute(container, state, root) {
       <strong>Tabulado:</strong> ${esc(state.tab?.fileName || '—')} (${state.tab?.parseMetadata?.totalRows ?? 0} registros)<br>
       ${filesInfo}
     </div>
-    <button class="btn btn--primary btn--lg" id="js-execute-btn">⚡ Ejecutar controles</button>
+
+    <label style="display:flex;align-items:center;gap:var(--sp-2);margin-bottom:var(--sp-3);cursor:pointer;padding:var(--sp-2) var(--sp-3);background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);max-width:680px;">
+      <input type="checkbox" id="js-quick-run" ${state.quickRun ? 'checked' : ''}>
+      <div>
+        <strong>⚡ Ejecución rápida</strong> — no guarda nada en el historial
+        <p class="text-sm text-muted" style="margin:var(--sp-1) 0 0;">Útil para probar mapeos o configuraciones sin que este run aparezca después en el checklist o en la lista de runs.</p>
+      </div>
+    </label>
+
+    <button class="btn btn--primary btn--lg" id="js-execute-btn">▶ Ejecutar controles</button>
     <div id="js-execute-status" style="margin-top:var(--sp-5);"></div>
   `;
 
@@ -971,6 +983,9 @@ function renderStepExecute(container, state, root) {
   container.querySelector('#js-notes-input').addEventListener('input', e => {
     state.notes = e.target.value;
   });
+  container.querySelector('#js-quick-run').addEventListener('change', e => {
+    state.quickRun = e.target.checked;
+  });
   container.querySelector('#js-execute-btn').addEventListener('click', () => {
     container.querySelector('#js-execute-btn').disabled = true;
     executeControls(state, container.querySelector('#js-execute-status'), container, root);
@@ -979,15 +994,19 @@ function renderStepExecute(container, state, root) {
 
 function renderInlineResults(container, state, root) {
   container.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--sp-4);">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--sp-3);">
       <div>
         <h3 style="margin:0 0 var(--sp-1);">${esc(state.client.name)} — Controles ${esc(state.period)}</h3>
         <p class="text-muted" style="margin:0;font-size:var(--text-sm);">Ejecutado el ${new Date().toLocaleDateString('es-AR', { day:'numeric', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit' })}</p>
       </div>
       <button class="btn btn--ghost btn--sm" id="js-rerun-btn">↺ Ejecutar de nuevo</button>
     </div>
+
+    <div id="js-status-banner" style="margin-bottom:var(--sp-4);"></div>
     <div id="js-inline-results"></div>
   `;
+
+  renderStatusBanner(container.querySelector('#js-status-banner'), state);
 
   const resultsContainer = container.querySelector('#js-inline-results');
 
@@ -1003,8 +1022,65 @@ function renderInlineResults(container, state, root) {
 
   container.querySelector('#js-rerun-btn').addEventListener('click', () => {
     state.lastRunResults = null;
+    state.lastRunId = null;
+    state.lastRunIsDefinitive = false;
     renderStepExecute(container, state, root);
     renderWizardNav(root, state);
+  });
+}
+
+/**
+ * Banner de estado del run (Quick / Borrador / Definitivo) con toggle.
+ */
+function renderStatusBanner(bannerEl, state) {
+  if (!bannerEl) return;
+
+  // Modo Quick: no se guardó nada
+  if (state.lastRunId == null) {
+    bannerEl.innerHTML = `
+      <div style="padding:var(--sp-3) var(--sp-4);border:1px solid var(--color-border);border-radius:var(--radius-md);background:var(--color-surface);display:flex;align-items:center;gap:var(--sp-3);">
+        <span style="font-size:1.4em;">⚡</span>
+        <div style="flex:1;">
+          <strong>Ejecución rápida</strong> — este run no se guardó.
+          <p class="text-sm text-muted" style="margin:var(--sp-1) 0 0;">Los resultados están sólo en pantalla. Si cerrás la página se pierden.</p>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  // Modo guardado: Borrador o Definitivo
+  const isDef = state.lastRunIsDefinitive === true;
+  const icon  = isDef ? '✅' : '📝';
+  const title = isDef ? 'Definitivo' : 'Borrador';
+  const desc  = isDef
+    ? 'Este run aparece en el checklist mensual.'
+    : 'Este run no aparece en el checklist hasta que lo marques como definitivo.';
+  const btnLabel = isDef ? '↩ Volver a borrador' : '📌 Marcar como definitivo';
+  const borderCol = isDef ? 'var(--color-match-exact, #00a651)' : 'var(--color-border)';
+  const bgCol = isDef ? 'rgba(0,166,81,0.06)' : 'var(--color-surface)';
+
+  bannerEl.innerHTML = `
+    <div style="padding:var(--sp-3) var(--sp-4);border:1px solid ${borderCol};border-radius:var(--radius-md);background:${bgCol};display:flex;align-items:center;gap:var(--sp-3);">
+      <span style="font-size:1.4em;">${icon}</span>
+      <div style="flex:1;">
+        <strong>${title}</strong>
+        <p class="text-sm text-muted" style="margin:var(--sp-1) 0 0;">${desc}</p>
+      </div>
+      <button class="btn ${isDef ? 'btn--ghost' : 'btn--primary'} btn--sm" id="js-toggle-definitive">${btnLabel}</button>
+    </div>
+  `;
+
+  bannerEl.querySelector('#js-toggle-definitive').addEventListener('click', async () => {
+    const newValue = !state.lastRunIsDefinitive;
+    try {
+      await updateControlRun(state.lastRunId, { isDefinitive: newValue });
+      state.lastRunIsDefinitive = newValue;
+      renderStatusBanner(bannerEl, state);
+      showToast(newValue ? '✅ Marcado como definitivo' : '↩ Vuelto a borrador', 'success');
+    } catch (err) {
+      showToast(`Error: ${err.message}`, 'danger');
+    }
   });
 }
 
@@ -1019,51 +1095,53 @@ async function executeControls(state, statusEl, container, root) {
   `;
 
   try {
-    // 1. Crear el run en la DB
-    const runId = await createControlRun(
-      state.clientId, state.period, state.selectedControls, state.notes
-    );
-
-    // 2. Guardar el Tabulado (si está presente)
+    const quickRun = state.quickRun === true;
     const tab = state.tab;
-    if (tab) {
-      await saveControlRunFile(
-        runId, 'tab_control', tab.fileName, tab.parsedRows, tab.parseMetadata, tab.mapping
-      );
-    }
 
-    // 3. Guardar config extra del Tabulado (Brutos / GS Pers) si aplica
+    // Las preferencias del usuario (mapeos de columnas) se guardan siempre,
+    // sean borrador o quick — son configuración que el usuario reusa.
     const needsTabExtra = state.selectedControls.some(id =>
       BRUTOS_IDS.includes(id) || GS_PERS_IDS.includes(id)
     );
     if (needsTabExtra && Object.keys(state.tabExtraConfig).length > 0) {
       await saveFileProfile(state.clientId, 'brutos_tab_config', state.tabExtraConfig);
     }
-
-    // 3b. Guardar agrupación de conceptos RendvsTabu si fue personalizada
     if (state.selectedControls.includes('rend_vs_tabu') && state.rendVsTabuGrouping) {
       await saveFileProfile(state.clientId, 'rendvstabu_concept_grouping', state.rendVsTabuGrouping);
     }
-
-    // 3c. Guardar config del Control 6 (Rendimiento vs Asiento) si fue editada
     if (state.selectedControls.includes('rend_vs_asiento') && state.rvaConfig) {
       await saveFileProfile(state.clientId, 'rva_config', state.rvaConfig);
     }
 
-    // 4. Por cada control: guardar archivos adicionales y ejecutar lógica
+    // El run en sí se crea sólo si NO es quickRun
+    let runId = null;
+    if (!quickRun) {
+      runId = await createControlRun(
+        state.clientId, state.period, state.selectedControls, state.notes
+      );
+      if (tab) {
+        await saveControlRunFile(
+          runId, 'tab_control', tab.fileName, tab.parsedRows, tab.parseMetadata, tab.mapping
+        );
+      }
+    }
+
+    // Por cada control: guardar archivos adicionales (si !quickRun) y ejecutar lógica
     const runResults = {};
 
     for (const controlId of state.selectedControls) {
       const ctrl = CONTROL_REGISTRY[controlId];
       if (!ctrl) continue;
 
-      for (const fileSpec of ctrl.additionalFiles) {
-        const fileData = state.controlFiles[controlId]?.[fileSpec.key];
-        if (fileData) {
-          await saveControlRunFile(
-            runId, fileSpec.fileType,
-            fileData.fileName, fileData.parsedRows, fileData.parseMetadata, fileData.mapping
-          );
+      if (!quickRun) {
+        for (const fileSpec of ctrl.additionalFiles) {
+          const fileData = state.controlFiles[controlId]?.[fileSpec.key];
+          if (fileData) {
+            await saveControlRunFile(
+              runId, fileSpec.fileType,
+              fileData.fileName, fileData.parsedRows, fileData.parseMetadata, fileData.mapping
+            );
+          }
         }
       }
 
@@ -1074,7 +1152,6 @@ async function executeControls(state, statusEl, container, root) {
       if ((controlId === 'rend_vs_tabu' || controlId === 'rend_vs_asiento') && state.rendVsTabuGrouping) {
         mapping.conceptGrouping = state.rendVsTabuGrouping;
       }
-      // Config editable del Control 6 (Rendimiento vs Asiento)
       if (controlId === 'rend_vs_asiento' && state.rvaConfig) {
         mapping.rvaConfig = state.rvaConfig;
       }
@@ -1093,12 +1170,15 @@ async function executeControls(state, statusEl, container, root) {
       const results = ctrl.run(primaryRows, tabRows, mapping);
       runResults[controlId] = results;
 
-      await saveControlRunResults(runId, controlId, results);
+      if (!quickRun) await saveControlRunResults(runId, controlId, results);
     }
 
-    // 5. Mostrar resultados inline (sin navegar a otra página)
-    state.lastRunId      = runId;
-    state.lastRunResults = runResults;
+    // 5. Mostrar resultados inline (sin navegar a otra página).
+    // Si fue quickRun, lastRunId queda null y el banner indica que no se guardó.
+    // Si fue saved, arranca como borrador (isDefinitive=false) y el banner deja promoverlo.
+    state.lastRunId            = runId;
+    state.lastRunResults       = runResults;
+    state.lastRunIsDefinitive  = false;
     renderInlineResults(container, state, root);
     renderWizardNav(root, state);
 
