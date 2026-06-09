@@ -74,6 +74,7 @@ export function runGsPers(gsRows, tabRows, mapping) {
   return {
     summary: { total: rows.length, conDifGtos, conDifDto, sinTabData },
     rows,
+    period: mapping.period || '',
   };
 }
 
@@ -197,6 +198,7 @@ export function runGsPersReporte(_primaryRows, tabRows, mapping) {
   return {
     summary: { total: rows.length },
     rows,
+    period,
     cols: {
       hasNombre:    !!nombreCol,
       hasApellido1: !!apellido1Col,
@@ -396,7 +398,7 @@ async function exportGsPersToXlsx(results) {
     dr.getCell(6).font = { ...base };
   }
 
-  await downloadXlsx(wb, `GsPers_Control_${dateSuffix()}.xlsx`);
+  await downloadXlsx(wb, `GsPers_Control_${periodSuffix(results.period)}.xlsx`);
 }
 
 async function exportGsPersReporteToXlsx(results) {
@@ -452,7 +454,7 @@ async function exportGsPersReporteToXlsx(results) {
     });
   }
 
-  await downloadXlsx(wb, `GsPers_Reporte_${dateSuffix()}.xlsx`);
+  await downloadXlsx(wb, `GsPers_Reporte_${periodSuffix(results.period)}.xlsx`);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -484,6 +486,12 @@ function esc(str) {
 
 function dateSuffix() {
   return new Date().toISOString().slice(0, 10).replace(/-/g, '');
+}
+
+function periodSuffix(period) {
+  if (!period) return dateSuffix();
+  const [year, month] = period.split('-');
+  return (!year || !month) ? dateSuffix() : String(month).padStart(2, '0') + year;
 }
 
 function firstBusinessDay(year, month) {

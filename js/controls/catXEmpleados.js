@@ -167,6 +167,7 @@ export function runCatXEmpleados(catAllRows, tabRows, mapping) {
     fieldDiscrepancies,
     byPuesto,
     byCC,
+    period: mapping.period || '',
   };
 }
 
@@ -507,7 +508,7 @@ async function exportCatXEmpleadosToXlsx(results) {
   addDistributionSheet(wb, 'Por Puesto',         'Puesto',          byPuesto, styleHeader, base, bold, solidFill, WARN_BG);
   addDistributionSheet(wb, 'Por Centro de Costo', 'Centro de Costo', byCC,     styleHeader, base, bold, solidFill, WARN_BG);
 
-  await downloadXlsx(wb, `EE_x_CATEG_${dateSuffix()}.xlsx`);
+  await downloadXlsx(wb, `EE_x_CATEG_${periodSuffix(results.period)}.xlsx`);
 }
 
 function addDistributionSheet(wb, sheetName, labelCol, rows, styleHeader, base, bold, solidFill, warnBg) {
@@ -590,6 +591,12 @@ async function downloadXlsx(wb, fileName) {
 
 function dateSuffix() {
   return new Date().toISOString().slice(0, 10).replace(/-/g, '');
+}
+
+function periodSuffix(period) {
+  if (!period) return dateSuffix();
+  const [year, month] = period.split('-');
+  return (!year || !month) ? dateSuffix() : String(month).padStart(2, '0') + year;
 }
 
 // ── Helpers internos ──────────────────────────────────────────────────────────

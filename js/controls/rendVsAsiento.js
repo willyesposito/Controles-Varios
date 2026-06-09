@@ -552,6 +552,7 @@ export function runRendVsAsiento(rendRows, _tabRows, mapping) {
 
   return {
     summary, rows, ccsSoloEnConta,
+    period: mapping.period || '',
     meta: {
       accountNames: Object.fromEntries(accountNames),
       conceptNames: Object.fromEntries(conceptNames),
@@ -883,6 +884,12 @@ function dateSuffix() {
   return new Date().toISOString().slice(0, 10).replace(/-/g, '');
 }
 
+function periodSuffix(period) {
+  if (!period) return dateSuffix();
+  const [year, month] = period.split('-');
+  return (!year || !month) ? dateSuffix() : String(month).padStart(2, '0') + year;
+}
+
 // ── Pestañas adicionales del export ──────────────────────────────────────────
 
 // Orden canónico de categorías para Desglose / Detalle (mismo orden que COLS sin total)
@@ -1074,8 +1081,9 @@ function addDesglosePorCcSheet(wb, detalle) {
 
 async function exportRendVsAsientoToXlsx(results) {
   await loadExcelJS();
-  const { rows, ccsSoloEnConta, meta } = results;
-  const detalle = meta?.detalle || [];
+  const { rows, ccsSoloEnConta, meta, period } = results;
+  const detalle  = meta?.detalle || [];
+  const pSuffix  = periodSuffix(period);
 
   const wb = new window.ExcelJS.Workbook();
   wb.creator = 'H&A Controles Nómina';
@@ -1116,7 +1124,7 @@ async function exportRendVsAsientoToXlsx(results) {
     cell.fill      = solidFill(GRAY_HDR);
   });
 
-  const r2 = ws.addRow(['', '', ...COLS.flatMap(() => ['Rend', 'CONTA', 'CTRL\nCONTA−Rend'])]);
+  const r2 = ws.addRow(['', '', ...COLS.flatMap(() => [`Rend ${pSuffix}`, `CONTA ${pSuffix}`, 'CTRL\nCONTA−Rend'])]);
   r2.height = 28;
   COLS.forEach((c, i) => {
     const startCol = 3 + i * 3;
@@ -1213,5 +1221,5 @@ async function exportRendVsAsientoToXlsx(results) {
     }
   }
 
-  await downloadXlsx(wb, `RendVsCONTA_${dateSuffix()}.xlsx`);
+  await downloadXlsx(wb, `RendVsCONTA_${pSuffix}.xlsx`);
 }

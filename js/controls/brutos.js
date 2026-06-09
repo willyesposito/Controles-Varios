@@ -51,7 +51,8 @@ export function runBrutos(brutosRows, tabRows, mapping) {
     const valAcu = aCuFutAuTabCol
       ? toNum(row[aCuFutAuTabCol])
       : (toNum(row['1017']) ?? toNum(row[1017]));
-    tabByLegajo.set(id, { valSal, valAcu });
+    const nombre = tm.apellidoNombreColumn ? norm(row[tm.apellidoNombreColumn]) : '';
+    tabByLegajo.set(id, { valSal, valAcu, nombre });
   }
 
   const rows = brutosRows.map(row => {
@@ -67,6 +68,7 @@ export function runBrutos(brutosRows, tabRows, mapping) {
 
     return {
       legajo,
+      nombre:       tab.nombre ?? '',
       salBase,
       aCuFutAumen,
       tabValSal:    tab.valSal,
@@ -83,6 +85,7 @@ export function runBrutos(brutosRows, tabRows, mapping) {
   return {
     summary: { total: rows.length, conDifSalario, conDifACuFutAumen, sinTabData },
     rows,
+    period: mapping.period || '',
   };
 }
 
@@ -107,6 +110,34 @@ export function renderBrutosResults(results, container) {
     (v !== null && Math.abs(v) > 0.01)
       ? 'color:var(--color-danger);font-weight:600;'
       : '';
+
+  // Totales para el chip de resumen
+  const sumSalBrutos = rows.reduce((s, r) => s + (r.salBase   ?? 0), 0);
+  const sumSalTab    = rows.reduce((s, r) => s + (r.tabValSal ?? 0), 0);
+  const diffSal      = sumSalTab - sumSalBrutos;
+  const sumAcuBrutos = rows.reduce((s, r) => s + (r.aCuFutAumen ?? 0), 0);
+  const sumAcuTab    = rows.reduce((s, r) => s + (r.tabValAcu  ?? 0), 0);
+  const diffAcu      = sumAcuTab - sumAcuBrutos;
+  const countDiff    = rows.filter(r =>
+    (r.ctrlSalBase !== null && Math.abs(r.ctrlSalBase) > 0.01) ||
+    (r.ctrlACuFutAumen !== null && Math.abs(r.ctrlACuFutAumen) > 0.01)
+  ).length;
+
+  const chipEl = document.createElement('div');
+  chipEl.style.cssText = 'padding:var(--sp-3);background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);margin:var(--sp-3) var(--sp-3) 0;display:flex;flex-wrap:wrap;gap:var(--sp-4);align-items:center;';
+  chipEl.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:2px;">
+      <span style="font-size:0.7em;color:var(--color-text-muted);font-weight:600;">SAL_BASE</span>
+      <span style="font-size:var(--text-sm);">Brutos: <strong>${fmt(sumSalBrutos)}</strong> &middot; Tab: <strong>${fmt(sumSalTab)}</strong> &middot; Diff: <strong style="${Math.abs(diffSal) > 0.01 ? 'color:var(--color-danger);' : ''}">${fmt(diffSal)}</strong></span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:2px;">
+      <span style="font-size:0.7em;color:var(--color-text-muted);font-weight:600;">A_CTA_FUT_AUMEN</span>
+      <span style="font-size:var(--text-sm);">Brutos: <strong>${fmt(sumAcuBrutos)}</strong> &middot; Tab: <strong>${fmt(sumAcuTab)}</strong> &middot; Diff: <strong style="${Math.abs(diffAcu) > 0.01 ? 'color:var(--color-danger);' : ''}">${fmt(diffAcu)}</strong></span>
+    </div>
+    <div style="margin-left:auto;font-size:var(--text-sm);">
+      ${rows.length} registros &middot; ${countDiff > 0 ? `<span style="color:var(--color-danger);font-weight:600;">${countDiff} con diferencias</span>` : '<span style="color:var(--color-success);">&#10003; Sin diferencias</span>'}
+    </div>
+  `;
 
   // Botón exportar
   const toolbar = document.createElement('div');
@@ -136,6 +167,7 @@ export function renderBrutosResults(results, container) {
       <thead>
         <tr>
           <th rowspan="2">Legajo</th>
+          <th rowspan="2">Nombre</th>
           <th colspan="2" style="text-align:center;background:${CYAN_HDR};">Salario Base</th>
           <th colspan="2" style="text-align:center;background:${LILAC_HDR};">A Cta Fut Aumen</th>
           <th colspan="3" style="text-align:center;">Valores Tabulado</th>
@@ -154,6 +186,7 @@ export function renderBrutosResults(results, container) {
         ${rows.map(r => `
           <tr>
             <td>${esc(r.legajo)}</td>
+            <td style="font-size:var(--text-sm);">${esc(r.nombre)}</td>
             <td style="text-align:right;background:${CYAN_BG};">${fmt(r.salBase)}</td>
             <td style="text-align:right;background:${CYAN_BG};${diffStyle(r.ctrlSalBase)}">${fmt(r.ctrlSalBase)}</td>
             <td style="text-align:right;background:${LILAC_BG};">${fmt(r.aCuFutAumen)}</td>
@@ -168,6 +201,7 @@ export function renderBrutosResults(results, container) {
   `;
 
   container.innerHTML = '';
+  container.appendChild(chipEl);
   container.appendChild(toolbar);
   container.appendChild(tableWrap);
 }
@@ -207,6 +241,7 @@ export function runBrutosReporte(_primaryRows, tabRows, mapping) {
   return {
     summary: { total: rows.length },
     rows,
+    period,
     cols: {
       hasNombre:    !!nombreCol,
       hasApellido1: !!apellido1Col,
@@ -328,7 +363,7 @@ async function loadExcelJS() {
 
 async function exportBrutosToXlsx(results) {
   await loadExcelJS();
-  const { rows } = results;
+  const { rows, period } = results;
 
   const wb = new window.ExcelJS.Workbook();
   wb.creator = 'H&A Controles Nómina';
@@ -336,7 +371,7 @@ async function exportBrutosToXlsx(results) {
 
   const ws = wb.addWorksheet('Reporte de Brutos');
   ws.columns = [
-    { width: 12 }, { width: 18 }, { width: 22 },
+    { width: 12 }, { width: 28 }, { width: 18 }, { width: 22 },
     { width: 20 }, { width: 24 }, { width: 12 },
     { width: 18 }, { width: 18 },
   ];
@@ -351,14 +386,15 @@ async function exportBrutosToXlsx(results) {
   const LILAC_BG  = 'FFF4EFFA';
   const GRAY_HDR  = 'FFE8E8E8';
 
-  // Fila 1: grupos
-  const r1 = ws.addRow(['Legajo', 'Salario Base', null, 'A Cta Fut Aumen', null, 'Valores Tabulado', null, null]);
-  const r2 = ws.addRow(['', 'SAL_BASE', 'CTRL SALARIO BASE', 'A_CTA_FUT_AUMEN', 'CTRL A_CTA_FUT_AUMEN', 'Legajo', 'SAL_BASE (Tab)', 'A_CTA_FUT (Tab)']);
+  // Fila 1: grupos  (col A=Legajo, B=Nombre, C:D=Salario Base, E:F=ACFA, G:I=Tabulado)
+  const r1 = ws.addRow(['Legajo', 'Apellido y Nombre', 'Salario Base', null, 'A Cta Fut Aumen', null, 'Valores Tabulado', null, null]);
+  const r2 = ws.addRow(['', '', 'SAL_BASE', 'CTRL SALARIO BASE', 'A_CTA_FUT_AUMEN', 'CTRL A_CTA_FUT_AUMEN', 'Legajo', 'SAL_BASE (Tab)', 'A_CTA_FUT (Tab)']);
 
   ws.mergeCells('A1:A2');
-  ws.mergeCells('B1:C1');
-  ws.mergeCells('D1:E1');
-  ws.mergeCells('F1:H1');
+  ws.mergeCells('B1:B2');
+  ws.mergeCells('C1:D1');
+  ws.mergeCells('E1:F1');
+  ws.mergeCells('G1:I1');
   r1.height = 22;
   r2.height = 20;
 
@@ -369,9 +405,10 @@ async function exportBrutosToXlsx(results) {
     cell.border = { bottom: { style: 'thin', color: { argb: 'FFB0B0B0' } } };
   };
   styleGrp(r1.getCell(1), GRAY_HDR);
-  styleGrp(r1.getCell(2), CYAN_HDR);
-  styleGrp(r1.getCell(4), LILAC_HDR);
-  styleGrp(r1.getCell(6), GRAY_HDR);
+  styleGrp(r1.getCell(2), GRAY_HDR);
+  styleGrp(r1.getCell(3), CYAN_HDR);
+  styleGrp(r1.getCell(5), LILAC_HDR);
+  styleGrp(r1.getCell(7), GRAY_HDR);
 
   const styleCol = (cell, bg, isBold = false) => {
     cell.font = isBold ? { ...bold } : { ...base };
@@ -379,37 +416,38 @@ async function exportBrutosToXlsx(results) {
     cell.fill = solidFill(bg);
     cell.border = { bottom: { style: 'medium', color: { argb: 'FFB0B0B0' } } };
   };
-  styleCol(r2.getCell(2), CYAN_HDR,  false);
-  styleCol(r2.getCell(3), CYAN_HDR,  true);
-  styleCol(r2.getCell(4), LILAC_HDR, false);
-  styleCol(r2.getCell(5), LILAC_HDR, true);
-  styleCol(r2.getCell(6), GRAY_HDR,  false);
+  styleCol(r2.getCell(3), CYAN_HDR,  false);
+  styleCol(r2.getCell(4), CYAN_HDR,  true);
+  styleCol(r2.getCell(5), LILAC_HDR, false);
+  styleCol(r2.getCell(6), LILAC_HDR, true);
   styleCol(r2.getCell(7), GRAY_HDR,  false);
   styleCol(r2.getCell(8), GRAY_HDR,  false);
+  styleCol(r2.getCell(9), GRAY_HDR,  false);
 
   ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 2 }];
 
   const numFmt = '#,##0.00';
   for (const r of rows) {
-    const dr = ws.addRow([r.legajo, r.salBase, r.ctrlSalBase, r.aCuFutAumen, r.ctrlACuFutAumen, r.legajo, r.tabValSal, r.tabValAcu]);
-    dr.getCell(2).fill = solidFill(CYAN_BG);
+    const dr = ws.addRow([r.legajo, r.nombre, r.salBase, r.ctrlSalBase, r.aCuFutAumen, r.ctrlACuFutAumen, r.legajo, r.tabValSal, r.tabValAcu]);
     dr.getCell(3).fill = solidFill(CYAN_BG);
-    dr.getCell(4).fill = solidFill(LILAC_BG);
+    dr.getCell(4).fill = solidFill(CYAN_BG);
     dr.getCell(5).fill = solidFill(LILAC_BG);
-    for (const col of [2, 3, 4, 5, 7, 8]) {
+    dr.getCell(6).fill = solidFill(LILAC_BG);
+    for (const col of [3, 4, 5, 6, 8, 9]) {
       dr.getCell(col).numFmt    = numFmt;
       dr.getCell(col).alignment = { horizontal: 'right', vertical: 'middle' };
       dr.getCell(col).font      = { ...base };
     }
     if (r.ctrlSalBase !== null && Math.abs(r.ctrlSalBase) > 0.01)
-      dr.getCell(3).font = { ...base, bold: true, color: { argb: 'FFCC0000' } };
+      dr.getCell(4).font = { ...base, bold: true, color: { argb: 'FFCC0000' } };
     if (r.ctrlACuFutAumen !== null && Math.abs(r.ctrlACuFutAumen) > 0.01)
-      dr.getCell(5).font = { ...base, bold: true, color: { argb: 'FFCC0000' } };
+      dr.getCell(6).font = { ...base, bold: true, color: { argb: 'FFCC0000' } };
     dr.getCell(1).font = { ...base };
-    dr.getCell(6).font = { ...base };
+    dr.getCell(2).font = { ...base };
+    dr.getCell(7).font = { ...base };
   }
 
-  await downloadXlsx(wb, `Brutos_Control_${dateSuffix()}.xlsx`);
+  await downloadXlsx(wb, `Brutos_Control_${periodSuffix(period)}.xlsx`);
 }
 
 async function exportBrutosReporteToXlsx(results) {
@@ -467,7 +505,7 @@ async function exportBrutosReporteToXlsx(results) {
     });
   }
 
-  await downloadXlsx(wb, `Brutos_Reporte_${dateSuffix()}.xlsx`);
+  await downloadXlsx(wb, `Brutos_Reporte_${periodSuffix(results.period)}.xlsx`);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -508,6 +546,12 @@ function esc(str) {
 
 function dateSuffix() {
   return new Date().toISOString().slice(0, 10).replace(/-/g, '');
+}
+
+function periodSuffix(period) {
+  if (!period) return dateSuffix();
+  const [year, month] = period.split('-');
+  return (!year || !month) ? dateSuffix() : String(month).padStart(2, '0') + year;
 }
 
 // Primer día hábil (lun–vie) del mes
