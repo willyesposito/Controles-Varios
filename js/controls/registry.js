@@ -61,6 +61,12 @@ import {
   summarizeRendVsAsiento,
 } from './rendVsAsiento.js';
 
+import {
+  runRendXEe,
+  renderRendXEeResults,
+  summarizeRendXEe,
+} from './rendXEe.js';
+
 export const CONTROL_REGISTRY = {
 
   cat_x_empleados: {
@@ -283,6 +289,32 @@ export const CONTROL_REGISTRY = {
     run:           runRendVsAsiento,
     summarize:     summarizeRendVsAsiento,
     renderResults: renderRendVsAsientoResults,
+  },
+
+  rend_x_ee: {
+    id:          'rend_x_ee',
+    label:       'Rendimiento x EE',
+    description: 'Cruza el Costo Total por empleado del reporte de M4 contra el Costo Total '
+      + 'calculado desde el Tabulado (PRECIO + ASIG. ESTÍMULO + CARGAS SS + PROV. MES + PROV. CCSS MES).',
+    help: {
+      what: 'Toma el Reporte de Costo Total por empleado de M4 (Legajo + Costo Total) y lo contrasta '
+        + 'contra el Costo Total calculado desde el Tabulado: por cada legajo suma los 5 totalizadores '
+        + 'de Rend vs Tabulado usando la misma agrupación de conceptos. La columna Dif (verde) muestra '
+        + 'Reporte − Calculado; las diferencias se pintan en rojo.',
+      how: [
+        'Bajá el Reporte de Costo Total por empleado de M4.',
+        'Cargalo en el Paso 2 cuando te lo pida.',
+        '(Opcional) Ajustá la agrupación de conceptos — es la misma que usa Rend vs Tabulado.',
+        'Ejecutá. Las diferencias se muestran en rojo dentro de la columna Dif.',
+      ],
+    },
+    tabRequired: true,
+    additionalFiles: [
+      { key: 'costoTotal', label: 'Reporte de Costo Total (por empleado)', fileType: 'costo_total_file' },
+    ],
+    run:           runRendXEe,
+    summarize:     summarizeRendXEe,
+    renderResults: renderRendXEeResults,
   },
 
 };

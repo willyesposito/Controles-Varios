@@ -11,6 +11,7 @@ import { parseBrutos } from '../parsers/brutosParser.js';
 import { parseGsPers } from '../parsers/gsPersParser.js';
 import { parseNr }     from '../parsers/nrParser.js';
 import { parseRendimiento } from '../parsers/rendimientoParser.js';
+import { parseCostoTotal }  from '../parsers/costoTotalParser.js';
 import { parseConta }       from '../parsers/contaExcel.js';
 import { parseCcXEmpleado } from '../parsers/ccXEmpleadoExcel.js';
 import { parseConceptCatalog } from '../parsers/conceptCatalog.js';
@@ -96,6 +97,10 @@ const FIELD_DEFS = {
     { key: 'provMesColumn',    label: 'Columna de PROVISIÓN MES',                       required: false },
     { key: 'provCcssColumn',   label: 'Columna de PROV. CCSS MES',                      required: false },
     { key: 'costoTotalColumn', label: 'Columna de COSTO TOTAL',                         required: false },
+  ],
+  costo_total_file: [
+    { key: 'legajoColumn',     label: 'Columna de Legajo (ID Empleado)', required: true },
+    { key: 'costoTotalColumn', label: 'Columna de COSTO TOTAL',          required: true },
   ],
   // Catálogo de conceptos: formato fijo, no requiere mapping de columnas
   concept_catalog: [],
@@ -347,7 +352,7 @@ function renderAlreadyLoaded(container, existingData, onReplace, onComplete) {
       + (parseMetadata?.noRemu       ? ` · ${parseMetadata.noRemu} no_remu`          : '')
       + (parseMetadata?.aporte       ? ` · ${parseMetadata.aporte} aportes`          : '')
       + (parseMetadata?.contribucion ? ` · ${parseMetadata.contribucion} contribuciones` : '');
-  } else if (fileType === 'tab_control' || fileType === 'brutos_file' || fileType === 'gs_pers_file' || fileType === 'nr_file' || fileType === 'rend_file' || fileType === 'cc_x_ee_file') {
+  } else if (fileType === 'tab_control' || fileType === 'brutos_file' || fileType === 'gs_pers_file' || fileType === 'nr_file' || fileType === 'rend_file' || fileType === 'costo_total_file' || fileType === 'cc_x_ee_file') {
     metaLine = `${parseMetadata?.totalRows ?? 0} registros`;
   } else if (fileType === 'conta_file') {
     const desc = parseMetadata?.descartadasSinCC ?? 0;
@@ -653,6 +658,7 @@ function parseFile(arrayBuffer, fileType, mapping) {
     case 'gs_pers_file':                return parseGsPers(arrayBuffer, mapping);
     case 'nr_file':                     return parseNr(arrayBuffer, mapping);
     case 'rend_file':                   return parseRendimiento(arrayBuffer, mapping);
+    case 'costo_total_file':            return parseCostoTotal(arrayBuffer, mapping);
     case 'conta_file':                  return parseConta(arrayBuffer);
     case 'cc_x_ee_file':                return parseCcXEmpleado(arrayBuffer);
     case 'concept_catalog':             return parseConceptCatalog(arrayBuffer);
@@ -671,6 +677,7 @@ function fileTypeLabel(fileType) {
     gs_pers_file:                'Reporte de GS Pers (Gastos Personales y Cochera)',
     nr_file:                     'Reporte de NR (No Remunerativos)',
     rend_file:                   'Reporte de Rendimiento',
+    costo_total_file:            'Reporte de Costo Total (por empleado)',
     conta_file:                  'Contabilidad Desglosada',
     cc_x_ee_file:                'CC x Empleado',
     concept_catalog:             'Catálogo de Conceptos',

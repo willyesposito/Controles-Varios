@@ -26,6 +26,7 @@ import { autoDetectBrutosMapping } from '../parsers/brutosParser.js';
 import { autoDetectGsPersMapping } from '../parsers/gsPersParser.js';
 import { autoDetectNrMapping }          from '../parsers/nrParser.js';
 import { autoDetectRendimientoMapping } from '../parsers/rendimientoParser.js';
+import { autoDetectCostoTotalMapping }  from '../parsers/costoTotalParser.js';
 import { buildParserMapping }           from '../parsers/conceptMatcher.js';
 import { currentPeriod, periodOptions } from '../utils/dates.js';
 import { renderConceptGroupingEditor }     from './rendVsTabuConceptEditor.js';
@@ -62,14 +63,18 @@ const AUTO_DETECT = {
   cat_empleados: autoDetectCatMapping,
   brutos_file:   autoDetectBrutosMapping,
   gs_pers_file:  autoDetectGsPersMapping,
-  nr_file:        autoDetectNrMapping,
-  rend_file:      autoDetectRendimientoMapping,
+  nr_file:           autoDetectNrMapping,
+  rend_file:         autoDetectRendimientoMapping,
+  costo_total_file:  autoDetectCostoTotalMapping,
 };
 
 // IDs de controles agrupados (para validación y detección de grupos seleccionados)
 const BRUTOS_IDS  = ['brutos', 'brutos_reporte'];
 const GS_PERS_IDS = ['gs_pers', 'gs_pers_reporte'];
 const NR_IDS      = ['nr', 'nr_reporte'];
+
+// Controles que usan la agrupación de conceptos de Rend vs Tabulado
+const REND_GROUPING_IDS = ['rend_vs_tabu', 'rend_x_ee'];
 
 export async function renderControlsWizard(root, clientId) {
   const client = await getClient(clientId);
@@ -733,13 +738,13 @@ function renderStepFiles(container, state, root) {
   const hasBrutos    = state.selectedControls.some(id => BRUTOS_IDS.includes(id));
   const hasGsPers    = state.selectedControls.some(id => GS_PERS_IDS.includes(id));
   const hasNr        = state.selectedControls.some(id => NR_IDS.includes(id));
-  const hasRendVsTabu = state.selectedControls.includes('rend_vs_tabu');
+  const hasRendGrouping = state.selectedControls.some(id => REND_GROUPING_IDS.includes(id));
 
   if (hasBrutos || hasGsPers || hasNr) {
     renderTabExtraConfig(filesArea, state, root, { hasBrutos, hasGsPers, hasNr });
   }
 
-  if (hasRendVsTabu && state.tab?.parsedRows?.length > 0) {
+  if (hasRendGrouping && state.tab?.parsedRows?.length > 0) {
     const editorDiv = document.createElement('div');
     filesArea.appendChild(editorDiv);
     renderConceptGroupingEditor(
@@ -1140,7 +1145,7 @@ async function executeControls(state, statusEl, container, root) {
     if (needsTabExtra && Object.keys(state.tabExtraConfig).length > 0) {
       await saveFileProfile(state.clientId, 'brutos_tab_config', state.tabExtraConfig);
     }
-    if (state.selectedControls.includes('rend_vs_tabu') && state.rendVsTabuGrouping) {
+    if (state.selectedControls.some(id => REND_GROUPING_IDS.includes(id)) && state.rendVsTabuGrouping) {
       await saveFileProfile(state.clientId, 'rendvstabu_concept_grouping', state.rendVsTabuGrouping);
     }
     if (state.selectedControls.includes('rend_vs_asiento') && state.rvaConfig) {
@@ -1183,7 +1188,7 @@ async function executeControls(state, statusEl, container, root) {
         tab:    { ...(tab?.mapping || {}), ...state.tabExtraConfig },
         period: state.period,
       };
-      if ((controlId === 'rend_vs_tabu' || controlId === 'rend_vs_asiento') && state.rendVsTabuGrouping) {
+      if ((REND_GROUPING_IDS.includes(controlId) || controlId === 'rend_vs_asiento') && state.rendVsTabuGrouping) {
         mapping.conceptGrouping = state.rendVsTabuGrouping;
       }
       if (controlId === 'rend_vs_asiento' && state.rvaConfig) {
