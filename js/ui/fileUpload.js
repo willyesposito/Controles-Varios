@@ -193,9 +193,8 @@ export async function initFileUploadStep(container, { clientId, fileType, existi
           const result = parseFile(arrayBuffer, fileType, mapping);
           await saveFileProfile(clientId, fileType, mapping);
 
-          const data = { ...result, mapping, fileName: file.name, fileType };
+          const data = { ...result, mapping, fileName: file.name, fileType, headers, arrayBuffer, clientId };
 
-          // ✅ FIX: mostrar estado de éxito (antes se quedaba el spinner para siempre)
           renderAlreadyLoaded(
             container,
             data,
@@ -212,7 +211,7 @@ export async function initFileUploadStep(container, { clientId, fileType, existi
                 try {
                   const result = parseFile(arrayBuffer, fileType, m);
                   await saveFileProfile(clientId, fileType, m);
-                  const data = { ...result, mapping: m, fileName: file.name, fileType };
+                  const data = { ...result, mapping: m, fileName: file.name, fileType, headers, arrayBuffer, clientId };
                   renderAlreadyLoaded(container, data,
                     () => initFileUploadStep(container, { clientId, fileType, existingData: null, onComplete }),
                     onComplete);
@@ -333,7 +332,7 @@ function renderError(container, msg, onRetry) {
 }
 
 function renderAlreadyLoaded(container, existingData, onReplace, onComplete) {
-  const { fileName, parseMetadata, fileType } = existingData;
+  const { fileName, parseMetadata, fileType, mapping, headers, arrayBuffer, clientId: dataClientId } = existingData;
   const warns = parseMetadata?.warnings?.length
     ? `<span class="badge badge--warning" style="margin-left:var(--sp-2);">${parseMetadata.warnings.length} aviso(s)</span>` : '';
 
@@ -358,6 +357,38 @@ function renderAlreadyLoaded(container, existingData, onReplace, onComplete) {
     metaLine = `${parseMetadata?.uniqueLegajos ?? 0} legajos · ${parseMetadata?.detectedConcepts?.length ?? 0} conceptos`;
   }
 
+  // Sección colapsada de mapeo de columnas (solo si el tipo tiene campos de mapping y se guardó
+  // el arrayBuffer de esta sesión — permite ajustar el mapeo sin re-subir el archivo)
+  const fields = FIELD_DEFS[fileType] || [];
+  const canRemap = fields.length > 0 && headers?.length > 0 && arrayBuffer;
+  const opts = (selected = '') => ['', ...((headers) || [])]
+    .map(h => `<option value="${escHtml(h)}" ${h === selected ? 'selected' : ''}>${escHtml(h) || '— Sin asignar —'}</option>`)
+    .join('');
+
+  const remapHtml = canRemap ? `
+    <details style="margin-top:var(--sp-1);">
+      <summary style="cursor:pointer;font-size:var(--text-sm);color:var(--color-primary);list-style:none;display:flex;align-items:center;gap:var(--sp-2);user-select:none;padding:var(--sp-1) 0;">
+        <span>▸</span> Ver / ajustar mapeo de columnas
+      </summary>
+      <div style="margin-top:var(--sp-2);padding:var(--sp-3);background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:var(--sp-2) var(--sp-3);margin-bottom:var(--sp-3);">
+          ${fields.map(f => {
+            const val = mapping?.[f.key] || '';
+            return `
+              <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label ${f.required ? 'form-label--required' : ''}" style="font-size:var(--text-sm);">${escHtml(f.label)}</label>
+                <select class="form-select" data-fu-remap-key="${escHtml(f.key)}" style="font-size:var(--text-sm);">
+                  ${opts(val)}
+                </select>
+              </div>
+            `;
+          }).join('')}
+        </div>
+        <button type="button" class="btn btn--primary btn--sm" id="js-remap-apply">✓ Aplicar cambios</button>
+      </div>
+    </details>
+  ` : '';
+
   container.innerHTML = `
     <div style="display:flex;align-items:center;gap:var(--sp-3);padding:var(--sp-2) var(--sp-3);border:1px solid var(--color-match-exact);background:var(--color-match-exact-bg);border-radius:var(--radius-md);font-size:var(--text-sm);">
       <span style="color:var(--color-match-exact);font-weight:600;">✓</span>
@@ -365,10 +396,35 @@ function renderAlreadyLoaded(container, existingData, onReplace, onComplete) {
       <span style="color:var(--color-text-muted);flex:1;">${metaLine}${warns}</span>
       <button class="btn btn--ghost btn--sm" id="js-replace-btn" style="flex-shrink:0;">↺ Cambiar</button>
     </div>
+    ${remapHtml}
   `;
   // El archivo ya está confirmado — avisamos al wizard sin esperar click adicional
   onComplete(existingData);
   container.querySelector('#js-replace-btn').addEventListener('click', onReplace);
+
+  if (canRemap) {
+    container.querySelector('#js-remap-apply')?.addEventListener('click', async () => {
+      const btn = container.querySelector('#js-remap-apply');
+      btn.disabled = true;
+      btn.textContent = 'Reprocesando…';
+      const newMapping = {};
+      container.querySelectorAll('[data-fu-remap-key]').forEach(sel => {
+        const k = sel.dataset.fuRemapKey;
+        if (sel.value) newMapping[k] = sel.value;
+      });
+      try {
+        const result = parseFile(arrayBuffer, fileType, newMapping);
+        if (dataClientId) await saveFileProfile(dataClientId, fileType, newMapping).catch(() => {});
+        const newData = { ...existingData, ...result, mapping: newMapping };
+        // Re-render: el nuevo renderAlreadyLoaded llamará a onComplete con los datos actualizados
+        renderAlreadyLoaded(container, newData, onReplace, onComplete);
+      } catch (err) {
+        showToast('Error al reprocesar: ' + err.message, 'danger');
+        btn.disabled = false;
+        btn.textContent = '✓ Aplicar cambios';
+      }
+    });
+  }
 }
 
 function renderMappingForm(container, { headers, preview, fileType, savedMapping, autoDetected, fileName, onConfirm, onCancel }) {
@@ -610,7 +666,7 @@ function fileTypeLabel(fileType) {
     resumen_largo_excel:         'Resumen Largo Excel',
     resumen_tabulado_horizontal: 'Resumen Tabulado Horizontal',
     tab_control:                 'Tabulado (Controles)',
-    cat_empleados:               'Catálogo de Empleados',
+    cat_empleados:               'Reporte de Categorías',
     brutos_file:                 'Reporte de Brutos',
     gs_pers_file:                'Reporte de GS Pers (Gastos Personales y Cochera)',
     nr_file:                     'Reporte de NR (No Remunerativos)',

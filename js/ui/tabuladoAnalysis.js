@@ -137,13 +137,14 @@ export function renderTabuladoAnalysis(container, tabData, catalogRows, selected
   const isAllGood = nOrph === 0 && nMiss === 0;
 
   container.innerHTML = `
-    <details style="margin-bottom:var(--sp-3);" ${isAllGood ? '' : 'open'}>
+    <details style="margin-bottom:var(--sp-3);">
+
       <summary style="
         cursor:pointer;font-size:var(--text-sm);font-weight:var(--fw-semibold);
         color:var(--color-primary);list-style:none;display:flex;align-items:center;
         gap:var(--sp-2);user-select:none;flex-wrap:wrap;
       ">
-        <span>${isAllGood ? '▸' : '▾'}</span> 📊 Análisis del Tabulado (${total} cols)
+        <span>▸</span> 📊 Análisis del Tabulado (${total} cols)
         <span style="margin-left:var(--sp-2);display:flex;gap:var(--sp-2);align-items:center;font-size:var(--text-sm);font-weight:400;">
           ${summaryCounts}
         </span>
