@@ -60,19 +60,19 @@ export function runCatXEmpleados(catAllRows, tabRows, mapping) {
   };
   const catActivos = catAllRows.filter(r => !esBaja(r));
   const catBajaIds = new Set(
-    catAllRows.filter(esBaja).map(r => norm(r[cm.idEmpColumn]))
+    catAllRows.filter(esBaja).map(r => normId(r[cm.idEmpColumn]))
   );
 
-  const catByEmp = new Map(catActivos.map(r => [norm(r[cm.idEmpColumn]), r]));
-  const tabByEmp = new Map(tabRows.map(r => [norm(r[tm.empleadoColumn]), r]));
+  const catByEmp = new Map(catActivos.map(r => [normId(r[cm.idEmpColumn]), r]));
+  const tabByEmp = new Map(tabRows.map(r => [normId(r[tm.empleadoColumn]), r]));
 
   // ── 1. Empleados faltantes ─────────────────────────────────────────────────
 
   const missingInTab = [];
-  for (const [id, r] of catByEmp) {
-    if (!tabByEmp.has(id)) {
+  for (const [, r] of catByEmp) {
+    if (!tabByEmp.has(normId(r[cm.idEmpColumn]))) {
       missingInTab.push({
-        id,
+        id:      norm(r[cm.idEmpColumn]),   // display: valor original (con ceros)
         apellido: norm(r[cm.apellidoColumn]),
         nombre:   norm(r[cm.nombreColumn]),
         fAlta:    cm.fAltaColumn ? fmtDate(r[cm.fAltaColumn]) : '',
@@ -81,13 +81,14 @@ export function runCatXEmpleados(catAllRows, tabRows, mapping) {
   }
 
   const missingInCat = [];
-  for (const [id, r] of tabByEmp) {
+  for (const [, r] of tabByEmp) {
     // Si el empleado existe en Rep. Categ. como baja, no es un error: el
     // Tabulado todavía lo lista pero el reporte ya lo dio de baja.
-    if (!catByEmp.has(id) && !catBajaIds.has(id)) {
+    const tid = normId(r[tm.empleadoColumn]);
+    if (!catByEmp.has(tid) && !catBajaIds.has(tid)) {
       missingInCat.push({
-        id,
-        apellidoNombre: norm(r[tm.apellidoNombreColumn]),
+        id:              norm(r[tm.empleadoColumn]),  // display: valor original
+        apellidoNombre:  norm(r[tm.apellidoNombreColumn]),
       });
     }
   }
@@ -95,8 +96,8 @@ export function runCatXEmpleados(catAllRows, tabRows, mapping) {
   // ── 2. Discrepancias de campo en empleados coincidentes ────────────────────
 
   const fieldDiscrepancies = [];
-  for (const [id, catRow] of catByEmp) {
-    const tabRow = tabByEmp.get(id);
+  for (const [nid, catRow] of catByEmp) {
+    const tabRow = tabByEmp.get(nid);
     if (!tabRow) continue;
 
     const diffs = [];
@@ -114,7 +115,7 @@ export function runCatXEmpleados(catAllRows, tabRows, mapping) {
     }
     if (diffs.length) {
       fieldDiscrepancies.push({
-        id,
+        id:      norm(catRow[cm.idEmpColumn]),  // display: valor original
         apellido: norm(catRow[cm.apellidoColumn]),
         nombre:   norm(catRow[cm.nombreColumn]),
         diffs,
@@ -127,7 +128,7 @@ export function runCatXEmpleados(catAllRows, tabRows, mapping) {
   // empleados del Tabulado que no son bajas en el reporte. Las bajas se
   // excluyen para no inflar el lado Tabulado con gente que ya no está activa.
 
-  const tabRowsForDist = tabRows.filter(r => !catBajaIds.has(norm(r[tm.empleadoColumn])));
+  const tabRowsForDist = tabRows.filter(r => !catBajaIds.has(normId(r[tm.empleadoColumn])));
 
   const dedupeCAT = cm.cuilColumn || cm.idEmpColumn;
   const dedupeTAB = tm.cuilColumn || tm.empleadoColumn;
@@ -481,7 +482,7 @@ async function loadExcelJS() {
 
 async function exportCatXEmpleadosToXlsx(results) {
   await loadExcelJS();
-  const { summary, missingInTab, missingInCat, fieldDiscrepancies, byPuesto, byCC } = results;
+  const { byPuesto, byCC } = results;
 
   const wb = new window.ExcelJS.Workbook();
   wb.creator = 'H&A Controles Nómina';
@@ -502,72 +503,6 @@ async function exportCatXEmpleadosToXlsx(results) {
     });
   };
 
-  // ── Hoja: Resumen ──────────────────────────────────────────────────────────
-  {
-    const ws = wb.addWorksheet('Resumen');
-    ws.columns = [{ width: 42 }, { width: 16 }];
-    const rows = [
-      ['Activos en Rep. Categ.',                summary.catActivos],
-      ['Bajas en Rep. Categ.',                  summary.catBajas],
-      ['Total Tabulado',                        summary.tabTotal],
-      ['Diferencia neta (Rep. Categ. − Tab)',   summary.diff],
-      ['Activos sin estar en Tabulado',         summary.missingInTabCount],
-      ['Tabulado sin estar en Rep. Categ.',     summary.missingInCatCount],
-      ['Discrepancias de campo',                summary.fieldDiscrepancyCount],
-    ];
-    for (const [label, value] of rows) {
-      const r = ws.addRow([label, value]);
-      r.getCell(1).font      = bold;
-      r.getCell(2).font      = base;
-      r.getCell(2).alignment = { horizontal: 'right' };
-    }
-  }
-
-  // ── Hoja: Activos en Rep. Categ. no en Tabulado ────────────────────────────
-  if (missingInTab.length > 0) {
-    const ws = wb.addWorksheet('Activos sin Tab');
-    const showFAlta = missingInTab.some(r => r.fAlta);
-    const headers = showFAlta
-      ? ['ID', 'Apellido', 'Nombre', 'F. Alta']
-      : ['ID', 'Apellido', 'Nombre'];
-    ws.columns = headers.map((_, i) => ({ width: i === 0 ? 12 : 24 }));
-    styleHeader(ws.addRow(headers));
-    ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 1 }];
-    for (const r of missingInTab) {
-      const dr = ws.addRow(showFAlta
-        ? [r.id, r.apellido, r.nombre, r.fAlta]
-        : [r.id, r.apellido, r.nombre]);
-      dr.eachCell(cell => { cell.font = base; });
-    }
-  }
-
-  // ── Hoja: Tabulado sin estar en Rep. Categ. activos ────────────────────────
-  if (missingInCat.length > 0) {
-    const ws = wb.addWorksheet('Tab sin Rep Categ');
-    ws.columns = [{ width: 12 }, { width: 36 }];
-    styleHeader(ws.addRow(['ID', 'Nombre']));
-    ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 1 }];
-    for (const r of missingInCat) {
-      const dr = ws.addRow([r.id, r.apellidoNombre]);
-      dr.eachCell(cell => { cell.font = base; });
-    }
-  }
-
-  // ── Hoja: Discrepancias de campo ───────────────────────────────────────────
-  if (fieldDiscrepancies.length > 0) {
-    const ws = wb.addWorksheet('Discrepancias');
-    ws.columns = [{ width: 12 }, { width: 32 }, { width: 16 }, { width: 22 }, { width: 22 }];
-    styleHeader(ws.addRow(['ID', 'Empleado', 'Campo', 'Valor en Rep. Categ.', 'Valor en Tabulado']));
-    ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 1 }];
-    for (const e of fieldDiscrepancies) {
-      const nombre = [e.apellido, e.nombre].filter(Boolean).join(' ');
-      for (const d of e.diffs) {
-        const dr = ws.addRow([e.id, nombre, d.field, d.cat, d.tab]);
-        dr.eachCell(cell => { cell.font = base; });
-      }
-    }
-  }
-
   // ── Hojas: Distribuciones (Puesto y CC) ────────────────────────────────────
   addDistributionSheet(wb, 'Por Puesto',         'Puesto',          byPuesto, styleHeader, base, bold, solidFill, WARN_BG);
   addDistributionSheet(wb, 'Por Centro de Costo', 'Centro de Costo', byCC,     styleHeader, base, bold, solidFill, WARN_BG);
@@ -581,8 +516,13 @@ function addDistributionSheet(wb, sheetName, labelCol, rows, styleHeader, base, 
   styleHeader(ws.addRow([labelCol, 'Rep. Categ.', 'Tabulado', 'Dif.']));
   ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 1 }];
 
+  let lastDataRowNum = 1;
+
   for (const r of rows) {
-    const dr = ws.addRow([r.key, r.catCount, r.tabCount, r.diff]);
+    const dr = ws.addRow([r.key, r.catCount, r.tabCount, null]);
+    const rn = dr.number;
+    lastDataRowNum = rn;
+    dr.getCell(4).value = { formula: `=B${rn}-C${rn}`, result: r.diff };
     dr.eachCell((cell, col) => {
       cell.font = base;
       if (col >= 2) cell.alignment = { horizontal: 'right' };
@@ -591,6 +531,24 @@ function addDistributionSheet(wb, sheetName, labelCol, rows, styleHeader, base, 
     if (r.diff !== 0) {
       dr.getCell(4).font = { ...bold, color: { argb: 'FFCC0000' } };
     }
+  }
+
+  // Fila de total
+  if (rows.length > 0) {
+    const tr = ws.addRow(['TOTAL', null, null, null]);
+    const tNum = tr.number;
+    const dataStart = 2;
+    tr.getCell(1).font = bold;
+    tr.getCell(2).value = { formula: `=SUM(B${dataStart}:B${lastDataRowNum})`, result: rows.reduce((s, r) => s + r.catCount, 0) };
+    tr.getCell(3).value = { formula: `=SUM(C${dataStart}:C${lastDataRowNum})`, result: rows.reduce((s, r) => s + r.tabCount, 0) };
+    tr.getCell(4).value = { formula: `=B${tNum}-C${tNum}`, result: rows.reduce((s, r) => s + r.diff, 0) };
+    tr.eachCell((cell, col) => {
+      if (col >= 2) {
+        cell.font = bold;
+        cell.alignment = { horizontal: 'right' };
+        cell.border = { top: { style: 'medium', color: { argb: 'FF888888' } } };
+      }
+    });
   }
 
   // Detalle de diferencias debajo
@@ -636,14 +594,15 @@ function dateSuffix() {
 
 // ── Helpers internos ──────────────────────────────────────────────────────────
 
-/** Agrupa filas por groupCol, indexando por idCol → displayFn(row) */
+/** Agrupa filas por groupCol, indexando por idCol → displayFn(row).
+ *  Usa normId para la clave interna de deduplicación (elimina ceros a la izquierda). */
 function groupByKey(rows, groupCol, idCol, displayFn) {
   const map = new Map();
   if (!groupCol || !idCol) return map;
   for (const r of rows) {
     const key = norm(r[groupCol]) || '(sin valor)';
     if (!map.has(key)) map.set(key, new Map());
-    const id = norm(r[idCol]);
+    const id = normId(r[idCol]);
     if (id) map.get(key).set(id, displayFn(r));
   }
   return map;
@@ -677,6 +636,15 @@ function fmtDate(val) {
 }
 
 function norm(v) { return v != null ? String(v).trim() : ''; }
+
+/** Normaliza IDs numéricos eliminando ceros a la izquierda para comparación.
+ *  "0870" → "870", "870" → "870". Texto no numérico queda igual. */
+function normId(v) {
+  const s = norm(v);
+  if (s === '') return '';
+  const n = parseInt(s, 10);
+  return isNaN(n) ? s : String(n);
+}
 
 function esc(str) {
   return String(str ?? '')
