@@ -239,7 +239,7 @@ export function runRendVsTabu(rendRows, tabRows, mapping) {
     difTotal:    rows.filter(r => hasDiff(r.dTotal)).length,
   };
 
-  return { summary, rows, meta: { conceptConfig, colByCode } };
+  return { summary, rows, period: mapping.period || '', meta: { conceptConfig, colByCode } };
 }
 
 // ── renderRendVsTabuResults ───────────────────────────────────────────────────
@@ -392,6 +392,12 @@ function dateSuffix() {
   return new Date().toISOString().slice(0, 10).replace(/-/g, '');
 }
 
+function periodSuffix(period) {
+  if (!period) return dateSuffix();
+  const [year, month] = period.split('-');
+  return (!year || !month) ? dateSuffix() : String(month).padStart(2, '0') + year;
+}
+
 async function exportRendVsTabuToXlsx(results) {
   await loadExcelJS();
   const { rows } = results;
@@ -531,5 +537,5 @@ async function exportRendVsTabuToXlsx(results) {
     if (Math.abs(d) > 0.01) dCell.font = { ...bold, color: { argb: RED } };
   });
 
-  await downloadXlsx(wb, `RendVsTabulado_${dateSuffix()}.xlsx`);
+  await downloadXlsx(wb, `RendVsTabulado_${periodSuffix(results.period)}.xlsx`);
 }
