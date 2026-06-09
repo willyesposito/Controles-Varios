@@ -1,12 +1,18 @@
 // catXEmpleados.js — Lógica y render del Control "EE x CATEG" (Empleados por Categoría)
 //
+// El reporte de Categorías trae TODA la nómina (activos + bajas). El control
+// separa unos de otros con la columna F. BAJA y NO marca como faltantes a los
+// empleados que figuran en el Tabulado pero ya son bajas en el reporte.
+//
 // Valida:
-//   1. Diferencias de cantidad: activos en CAT vs Tabulado
-//   2. Activos en CAT que no están en Tabulado (con F. Alta)
-//   3. Empleados en Tabulado que no están en CAT activos
+//   1. Diferencias de cantidad: activos en Rep. Categ. vs Tabulado
+//   2. Activos en Rep. Categ. que no están en Tabulado (con F. Alta)
+//   3. Empleados en Tabulado que no están en Rep. Categ. (ni activos ni bajas)
 //   4. Discrepancias de campo (PUESTO, CC, DEPTO) en empleados coincidentes
 //   5. Distribución por PUESTO — con detalle de empleados cuando hay diferencia
 //   6. Distribución por CC — ídem
+
+import { showToast } from '../ui/toast.js';
 
 /**
  * Resumen del control para la tarjeta colapsada en la pantalla de resultados.
@@ -24,12 +30,12 @@ export function summarizeCatXEmpleados(results) {
     insights: [
       {
         type:  s.missingInTabCount > 0 ? 'warning' : 'success',
-        label: 'En CAT, faltan en Tabulado',
+        label: 'En Rep. Categ., faltan en Tabulado',
         value: s.missingInTabCount,
       },
       {
         type:  s.missingInCatCount > 0 ? 'warning' : 'success',
-        label: 'En Tabulado, faltan en CAT',
+        label: 'En Tabulado, faltan en Rep. Categ.',
         value: s.missingInCatCount,
       },
       {
@@ -41,9 +47,21 @@ export function summarizeCatXEmpleados(results) {
   };
 }
 
-export function runCatXEmpleados(catActivos, tabRows, mapping) {
+export function runCatXEmpleados(catAllRows, tabRows, mapping) {
   const cm = mapping.cat;
   const tm = mapping.tab;
+
+  // Partir el reporte en activos y bajas usando F. BAJA.
+  const fBajaCol = cm.fBajaColumn;
+  const esBaja = (row) => {
+    if (!fBajaCol) return false;
+    const v = row[fBajaCol];
+    return !(v === null || v === undefined || String(v).trim() === '');
+  };
+  const catActivos = catAllRows.filter(r => !esBaja(r));
+  const catBajaIds = new Set(
+    catAllRows.filter(esBaja).map(r => norm(r[cm.idEmpColumn]))
+  );
 
   const catByEmp = new Map(catActivos.map(r => [norm(r[cm.idEmpColumn]), r]));
   const tabByEmp = new Map(tabRows.map(r => [norm(r[tm.empleadoColumn]), r]));
@@ -64,7 +82,9 @@ export function runCatXEmpleados(catActivos, tabRows, mapping) {
 
   const missingInCat = [];
   for (const [id, r] of tabByEmp) {
-    if (!catByEmp.has(id)) {
+    // Si el empleado existe en Rep. Categ. como baja, no es un error: el
+    // Tabulado todavía lo lista pero el reporte ya lo dio de baja.
+    if (!catByEmp.has(id) && !catBajaIds.has(id)) {
       missingInCat.push({
         id,
         apellidoNombre: norm(r[tm.apellidoNombreColumn]),
@@ -103,6 +123,11 @@ export function runCatXEmpleados(catActivos, tabRows, mapping) {
   }
 
   // ── 3. Distribuciones con detalle de empleados por grupo ───────────────────
+  // Las distribuciones agrupan SOLO empleados activos en Rep. Categ. y
+  // empleados del Tabulado que no son bajas en el reporte. Las bajas se
+  // excluyen para no inflar el lado Tabulado con gente que ya no está activa.
+
+  const tabRowsForDist = tabRows.filter(r => !catBajaIds.has(norm(r[tm.empleadoColumn])));
 
   const dedupeCAT = cm.cuilColumn || cm.idEmpColumn;
   const dedupeTAB = tm.cuilColumn || tm.empleadoColumn;
@@ -117,18 +142,19 @@ export function runCatXEmpleados(catActivos, tabRows, mapping) {
   });
 
   const byPuesto = mergeAggregations(
-    groupByKey(catActivos, cm.puestoColumn,      dedupeCAT, catDispFn),
-    groupByKey(tabRows,    tm.puestoColumn,       dedupeTAB, tabDispFn)
+    groupByKey(catActivos,     cm.puestoColumn, dedupeCAT, catDispFn),
+    groupByKey(tabRowsForDist, tm.puestoColumn, dedupeTAB, tabDispFn)
   );
 
   const byCC = mergeAggregations(
-    groupByKey(catActivos, cm.centroCostoColumn, dedupeCAT, catDispFn),
-    groupByKey(tabRows,    tm.ccColumn,           dedupeTAB, tabDispFn)
+    groupByKey(catActivos,     cm.centroCostoColumn, dedupeCAT, catDispFn),
+    groupByKey(tabRowsForDist, tm.ccColumn,           dedupeTAB, tabDispFn)
   );
 
   return {
     summary: {
       catActivos:            catActivos.length,
+      catBajas:              catBajaIds.size,
       tabTotal:              tabRows.length,
       diff:                  catActivos.length - tabRows.length,
       missingInTabCount:     missingInTab.length,
@@ -146,7 +172,7 @@ export function runCatXEmpleados(catActivos, tabRows, mapping) {
 // ── Render ────────────────────────────────────────────────────────────────────
 
 export function renderCatXEmpleadosResults(results, container) {
-  const { missingInTab, missingInCat, fieldDiscrepancies, byPuesto, byCC } = results;
+  const { summary, missingInTab, missingInCat, fieldDiscrepancies, byPuesto, byCC } = results;
   const showFAlta = missingInTab.some(r => r.fAlta);
 
   const SUM_STYLE = [
@@ -169,7 +195,7 @@ export function renderCatXEmpleadosResults(results, container) {
   // ── Secciones de cruces ────────────────────────────────────────────────────
 
   const missingInTabHtml = missingInTab.length === 0 ? '' : section(
-    `Activos en CAT que NO están en Tabulado (${missingInTab.length})`,
+    `Activos en Rep. Categ. que NO están en Tabulado (${missingInTab.length})`,
     `<div style="overflow-x:auto;">
       <table class="data-table data-table--compact">
         <thead>
@@ -193,7 +219,7 @@ export function renderCatXEmpleadosResults(results, container) {
   );
 
   const missingInCatHtml = missingInCat.length === 0 ? '' : section(
-    `En Tabulado que NO están en CAT activos (${missingInCat.length})`,
+    `En Tabulado que NO están en Rep. Categ. activos (${missingInCat.length})`,
     `<div style="overflow-x:auto;">
       <table class="data-table data-table--compact">
         <thead><tr><th>ID</th><th>Nombre</th></tr></thead>
@@ -211,7 +237,7 @@ export function renderCatXEmpleadosResults(results, container) {
     `<div style="overflow-x:auto;">
       <table class="data-table data-table--compact">
         <thead>
-          <tr><th>ID</th><th>Empleado</th><th>Campo</th><th>Valor en CAT</th><th>Valor en Tabulado</th></tr>
+          <tr><th>ID</th><th>Empleado</th><th>Campo</th><th>Valor en Rep. Categ.</th><th>Valor en Tabulado</th></tr>
         </thead>
         <tbody>
           ${fieldDiscrepancies.flatMap(e =>
@@ -247,7 +273,7 @@ export function renderCatXEmpleadosResults(results, container) {
     const sign       = r.diff > 0 ? '+' : '';
     const onlyCatHtml = r.onlyInCat.length === 0 ? '' : `
       <div style="margin-top:var(--sp-2);">
-        <strong style="font-size:var(--text-sm);">Solo en CAT (${r.onlyInCat.length}):</strong>
+        <strong style="font-size:var(--text-sm);">Solo en Rep. Categ. (${r.onlyInCat.length}):</strong>
         <table class="data-table data-table--compact" style="margin-top:var(--sp-1);">
           <thead><tr><th>ID</th><th>Empleado</th></tr></thead>
           <tbody>
@@ -292,7 +318,7 @@ export function renderCatXEmpleadosResults(results, container) {
         <thead>
           <tr>
             <th>${esc(labelCol)}</th>
-            <th style="text-align:right;">CAT</th>
+            <th style="text-align:right;">Rep. Categ.</th>
             <th style="text-align:right;">Tabulado</th>
             <th style="text-align:right;">Dif.</th>
           </tr>
@@ -312,15 +338,300 @@ export function renderCatXEmpleadosResults(results, container) {
     distTable(byCC, 'Centro de Costo')
   );
 
+  // ── Botón de exportación a Excel ───────────────────────────────────────────
+
+  const toolbar = document.createElement('div');
+  toolbar.style.cssText = 'display:flex;justify-content:flex-end;padding:var(--sp-2) var(--sp-3);';
+  const exportBtn = document.createElement('button');
+  exportBtn.className   = 'btn btn--primary btn--sm';
+  exportBtn.textContent = '⬇ Exportar .xlsx';
+  exportBtn.addEventListener('click', async () => {
+    exportBtn.disabled    = true;
+    exportBtn.textContent = 'Generando…';
+    try {
+      await exportCatXEmpleadosToXlsx(results);
+    } catch (err) {
+      showToast('Error al generar el archivo: ' + err.message, 'danger');
+    } finally {
+      exportBtn.disabled    = false;
+      exportBtn.textContent = '⬇ Exportar .xlsx';
+    }
+  });
+  toolbar.appendChild(exportBtn);
+
   // ── Render final ───────────────────────────────────────────────────────────
 
-  container.innerHTML = `
+  const sectionsHtml = `
+    ${buildDiffChip(summary)}
     ${missingInTabHtml}
     ${missingInCatHtml}
     ${discrepanciesHtml}
     ${puestoHtml}
     ${ccHtml}
   `;
+
+  container.innerHTML = '';
+  container.appendChild(toolbar);
+  const sectionsWrap = document.createElement('div');
+  sectionsWrap.innerHTML = sectionsHtml;
+  container.appendChild(sectionsWrap);
+}
+
+// ── Chip de resumen de diferencias ───────────────────────────────────────────
+
+function buildDiffChip(summary) {
+  const { missingInTabCount, missingInCatCount, fieldDiscrepancyCount,
+          catActivos, catBajas, tabTotal, diff } = summary;
+  const totalDiffs = missingInTabCount + missingInCatCount + fieldDiscrepancyCount;
+  const sign       = diff > 0 ? '+' : '';
+
+  const CHIP = [
+    'margin-bottom:var(--sp-5)',
+    'border:1px solid var(--color-border)',
+    'border-radius:var(--radius-md)',
+    'overflow:hidden',
+    'box-shadow:var(--shadow-sm)',
+    'background:var(--color-surface)',
+  ].join(';');
+
+  if (totalDiffs === 0) {
+    return `
+      <div style="${CHIP};display:flex;align-items:center;gap:var(--sp-3);
+        padding:var(--sp-4) var(--sp-5);
+        border-left:4px solid var(--color-success);">
+        <span style="font-size:var(--text-xl);color:var(--color-success);">✓</span>
+        <div>
+          <div style="font-weight:600;color:var(--color-success);font-size:var(--text-base);">
+            Sin diferencias
+          </div>
+          <div style="font-size:var(--text-sm);color:var(--color-text-muted);margin-top:2px;">
+            ${catActivos} activos en Rep. Categ. · ${tabTotal} en Tabulado
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  const tile = (count, label, isWarning) => {
+    const numColor  = isWarning ? 'var(--color-warning)' : 'var(--color-success)';
+    const topBorder = isWarning ? 'var(--color-warning)' : 'var(--color-success)';
+    return `
+      <div style="
+        flex:1; padding:var(--sp-4) var(--sp-5); text-align:center;
+        border-right:1px solid var(--color-border);
+        border-top:3px solid ${topBorder};
+        background:var(--color-surface);
+      ">
+        <div style="
+          font-size:var(--text-3xl); font-weight:700;
+          font-family:monospace; line-height:1.1;
+          color:${numColor}; letter-spacing:-1px;
+        ">${count}</div>
+        <div style="
+          font-size:var(--text-sm); color:var(--color-text-muted);
+          margin-top:var(--sp-1); line-height:1.3;
+        ">${esc(label)}</div>
+      </div>
+    `;
+  };
+
+  const diffLabel = diff === 0 ? 'sin diferencia neta'
+    : diff > 0  ? `${sign}${diff} más en Rep. Categ.`
+    :             `${diff} menos en Rep. Categ.`;
+
+  return `
+    <div style="${CHIP}">
+      <div style="
+        padding:var(--sp-2) var(--sp-5);
+        background:var(--color-bg-subtle);
+        border-bottom:1px solid var(--color-border);
+        display:flex; align-items:center; justify-content:space-between;
+      ">
+        <span style="font-size:var(--text-sm);font-weight:600;color:var(--color-text-muted);
+                     letter-spacing:.04em; text-transform:uppercase;">
+          Resumen de diferencias
+        </span>
+        <span style="font-size:var(--text-sm);color:var(--color-text-muted);">
+          ${catActivos} activos · ${tabTotal} en Tab · ${esc(diffLabel)}
+          ${catBajas > 0 ? ` · <em>${catBajas} bajas excluidas</em>` : ''}
+        </span>
+      </div>
+      <div style="display:flex;">
+        ${tile(missingInTabCount, 'activos sin Tabulado',    missingInTabCount     > 0)}
+        ${tile(missingInCatCount, 'en Tab sin Rep. Categ.',  missingInCatCount     > 0)}
+        ${tile(fieldDiscrepancyCount, 'discrepancias de campo', fieldDiscrepancyCount > 0)}
+      </div>
+    </div>
+  `;
+}
+
+// ── Export a Excel ────────────────────────────────────────────────────────────
+
+async function loadExcelJS() {
+  if (!window.ExcelJS) {
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js';
+      s.onload = resolve;
+      s.onerror = () => reject(new Error('No se pudo cargar ExcelJS. Verificá la conexión a internet.'));
+      document.head.appendChild(s);
+    });
+  }
+}
+
+async function exportCatXEmpleadosToXlsx(results) {
+  await loadExcelJS();
+  const { summary, missingInTab, missingInCat, fieldDiscrepancies, byPuesto, byCC } = results;
+
+  const wb = new window.ExcelJS.Workbook();
+  wb.creator = 'H&A Controles Nómina';
+  wb.created = new Date();
+
+  const HDR_BG   = 'FFE8E8E8';
+  const WARN_BG  = 'FFFFF4E5';
+  const base     = { name: 'Calibri', size: 10 };
+  const bold     = { ...base, bold: true };
+  const solidFill = argb => ({ type: 'pattern', pattern: 'solid', fgColor: { argb } });
+  const styleHeader = (row) => {
+    row.height = 20;
+    row.eachCell(cell => {
+      cell.font      = bold;
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.fill      = solidFill(HDR_BG);
+      cell.border    = { bottom: { style: 'medium', color: { argb: 'FFB0B0B0' } } };
+    });
+  };
+
+  // ── Hoja: Resumen ──────────────────────────────────────────────────────────
+  {
+    const ws = wb.addWorksheet('Resumen');
+    ws.columns = [{ width: 42 }, { width: 16 }];
+    const rows = [
+      ['Activos en Rep. Categ.',                summary.catActivos],
+      ['Bajas en Rep. Categ.',                  summary.catBajas],
+      ['Total Tabulado',                        summary.tabTotal],
+      ['Diferencia neta (Rep. Categ. − Tab)',   summary.diff],
+      ['Activos sin estar en Tabulado',         summary.missingInTabCount],
+      ['Tabulado sin estar en Rep. Categ.',     summary.missingInCatCount],
+      ['Discrepancias de campo',                summary.fieldDiscrepancyCount],
+    ];
+    for (const [label, value] of rows) {
+      const r = ws.addRow([label, value]);
+      r.getCell(1).font      = bold;
+      r.getCell(2).font      = base;
+      r.getCell(2).alignment = { horizontal: 'right' };
+    }
+  }
+
+  // ── Hoja: Activos en Rep. Categ. no en Tabulado ────────────────────────────
+  if (missingInTab.length > 0) {
+    const ws = wb.addWorksheet('Activos sin Tab');
+    const showFAlta = missingInTab.some(r => r.fAlta);
+    const headers = showFAlta
+      ? ['ID', 'Apellido', 'Nombre', 'F. Alta']
+      : ['ID', 'Apellido', 'Nombre'];
+    ws.columns = headers.map((_, i) => ({ width: i === 0 ? 12 : 24 }));
+    styleHeader(ws.addRow(headers));
+    ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 1 }];
+    for (const r of missingInTab) {
+      const dr = ws.addRow(showFAlta
+        ? [r.id, r.apellido, r.nombre, r.fAlta]
+        : [r.id, r.apellido, r.nombre]);
+      dr.eachCell(cell => { cell.font = base; });
+    }
+  }
+
+  // ── Hoja: Tabulado sin estar en Rep. Categ. activos ────────────────────────
+  if (missingInCat.length > 0) {
+    const ws = wb.addWorksheet('Tab sin Rep Categ');
+    ws.columns = [{ width: 12 }, { width: 36 }];
+    styleHeader(ws.addRow(['ID', 'Nombre']));
+    ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 1 }];
+    for (const r of missingInCat) {
+      const dr = ws.addRow([r.id, r.apellidoNombre]);
+      dr.eachCell(cell => { cell.font = base; });
+    }
+  }
+
+  // ── Hoja: Discrepancias de campo ───────────────────────────────────────────
+  if (fieldDiscrepancies.length > 0) {
+    const ws = wb.addWorksheet('Discrepancias');
+    ws.columns = [{ width: 12 }, { width: 32 }, { width: 16 }, { width: 22 }, { width: 22 }];
+    styleHeader(ws.addRow(['ID', 'Empleado', 'Campo', 'Valor en Rep. Categ.', 'Valor en Tabulado']));
+    ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 1 }];
+    for (const e of fieldDiscrepancies) {
+      const nombre = [e.apellido, e.nombre].filter(Boolean).join(' ');
+      for (const d of e.diffs) {
+        const dr = ws.addRow([e.id, nombre, d.field, d.cat, d.tab]);
+        dr.eachCell(cell => { cell.font = base; });
+      }
+    }
+  }
+
+  // ── Hojas: Distribuciones (Puesto y CC) ────────────────────────────────────
+  addDistributionSheet(wb, 'Por Puesto',         'Puesto',          byPuesto, styleHeader, base, bold, solidFill, WARN_BG);
+  addDistributionSheet(wb, 'Por Centro de Costo', 'Centro de Costo', byCC,     styleHeader, base, bold, solidFill, WARN_BG);
+
+  await downloadXlsx(wb, `EE_x_CATEG_${dateSuffix()}.xlsx`);
+}
+
+function addDistributionSheet(wb, sheetName, labelCol, rows, styleHeader, base, bold, solidFill, warnBg) {
+  const ws = wb.addWorksheet(sheetName);
+  ws.columns = [{ width: 32 }, { width: 14 }, { width: 14 }, { width: 10 }];
+  styleHeader(ws.addRow([labelCol, 'Rep. Categ.', 'Tabulado', 'Dif.']));
+  ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 1 }];
+
+  for (const r of rows) {
+    const dr = ws.addRow([r.key, r.catCount, r.tabCount, r.diff]);
+    dr.eachCell((cell, col) => {
+      cell.font = base;
+      if (col >= 2) cell.alignment = { horizontal: 'right' };
+      if (r.diff !== 0) cell.fill = solidFill(warnBg);
+    });
+    if (r.diff !== 0) {
+      dr.getCell(4).font = { ...bold, color: { argb: 'FFCC0000' } };
+    }
+  }
+
+  // Detalle de diferencias debajo
+  const hasDetail = rows.some(r => r.onlyInCat.length > 0 || r.onlyInTab.length > 0);
+  if (!hasDetail) return;
+
+  ws.addRow([]);
+  const titleRow = ws.addRow(['Detalle de diferencias']);
+  titleRow.getCell(1).font = bold;
+
+  const detailHdr = ws.addRow([labelCol, 'Origen', 'ID', 'Empleado']);
+  styleHeader(detailHdr);
+
+  for (const r of rows) {
+    if (r.diff === 0) continue;
+    for (const e of r.onlyInCat) {
+      const dr = ws.addRow([r.key, 'Solo en Rep. Categ.', e.id, e.nombre]);
+      dr.eachCell(cell => { cell.font = base; });
+    }
+    for (const e of r.onlyInTab) {
+      const dr = ws.addRow([r.key, 'Solo en Tabulado', e.id, e.nombre]);
+      dr.eachCell(cell => { cell.font = base; });
+    }
+  }
+}
+
+async function downloadXlsx(wb, fileName) {
+  const buf  = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function dateSuffix() {
+  return new Date().toISOString().slice(0, 10).replace(/-/g, '');
 }
 
 // ── Helpers internos ──────────────────────────────────────────────────────────

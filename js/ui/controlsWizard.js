@@ -32,6 +32,30 @@ import { renderConceptGroupingEditor }     from './rendVsTabuConceptEditor.js';
 import { renderRendVsAsientoConfigEditor, DEFAULT_RVA_CONFIG } from '../controls/rendVsAsiento.js';
 import { showToast, showConfirm }          from './toast.js';
 
+// ── Caché de sesión del Tabulado ─────────────────────────────────────────────
+// Evita re-subir el Tabulado entre runs mientras la página esté activa.
+// Expira a las 2 horas con aviso 1 minuto antes.
+
+const TAB_SESSION_TTL_MS  = 2 * 60 * 60 * 1000; // 2 horas
+const TAB_SESSION_WARN_MS = 60 * 1000;            // aviso 1 min antes de expirar
+
+let _tabSessionCache = null;   // { data, clientId }
+let _tabSessionTimer = null;
+
+function setTabSessionCache(data, clientId) {
+  clearTabSessionCache();
+  _tabSessionCache = { data: { ...data }, clientId };
+  _tabSessionTimer = setTimeout(() => {
+    showToast('⏳ El Tabulado en memoria expira en 1 minuto y será eliminado por seguridad.', 'warning');
+    setTimeout(clearTabSessionCache, TAB_SESSION_WARN_MS);
+  }, TAB_SESSION_TTL_MS - TAB_SESSION_WARN_MS);
+}
+
+function clearTabSessionCache() {
+  if (_tabSessionTimer) { clearTimeout(_tabSessionTimer); _tabSessionTimer = null; }
+  _tabSessionCache = null;
+}
+
 // Mapa: fileType → función de auto-detección de columnas
 const AUTO_DETECT = {
   tab_control:   autoDetectTabMapping,
@@ -67,11 +91,16 @@ export async function renderControlsWizard(root, clientId) {
     getFileProfile(Number(clientId), 'rva_config'),
   ]);
 
+  // Pre-cargar tabulado desde caché de sesión si existe y es del mismo cliente
+  const cachedTab = (_tabSessionCache?.clientId === Number(clientId))
+    ? _tabSessionCache.data
+    : null;
+
   const state = {
     step:             0,
     clientId:         Number(clientId),
     client,
-    tab:              null,
+    tab:              cachedTab,
     catalog:          savedCatalog || null,  // { rows, fileName, parseMetadata } | null
     selectedControls: ['cat_x_empleados'],
     controlFiles:     { cat_x_empleados: {} },
@@ -621,6 +650,7 @@ function renderStepFiles(container, state, root) {
       autoDetect:  AUTO_DETECT.tab_control,
       onComplete:  (data) => {
         state.tab = data;
+        setTabSessionCache(data, state.clientId);
         renderWizardNav(root, state);
         renderTabuladoAnalysis(analysisEl, state.tab, catalogRows, state.selectedControls);
       },
@@ -903,11 +933,15 @@ function renderTabExtraConfig(container, state, root, { hasBrutos, hasGsPers, ha
   `;
 
   panel.querySelectorAll('[data-tab-extra-key]').forEach(sel => {
-    sel.addEventListener('change', () => {
+    sel.addEventListener('change', async () => {
       const k = sel.dataset.tabExtraKey;
       if (sel.value) state.tabExtraConfig[k] = sel.value;
       else delete state.tabExtraConfig[k];
       renderWizardNav(root, state);
+      // Guardar inmediatamente para no perder la config si no se ejecuta el control
+      if (Object.keys(state.tabExtraConfig).length > 0) {
+        await saveFileProfile(state.clientId, 'brutos_tab_config', state.tabExtraConfig).catch(() => {});
+      }
     });
   });
 
@@ -1101,7 +1135,7 @@ async function executeControls(state, statusEl, container, root) {
     // Las preferencias del usuario (mapeos de columnas) se guardan siempre,
     // sean borrador o quick — son configuración que el usuario reusa.
     const needsTabExtra = state.selectedControls.some(id =>
-      BRUTOS_IDS.includes(id) || GS_PERS_IDS.includes(id)
+      BRUTOS_IDS.includes(id) || GS_PERS_IDS.includes(id) || NR_IDS.includes(id)
     );
     if (needsTabExtra && Object.keys(state.tabExtraConfig).length > 0) {
       await saveFileProfile(state.clientId, 'brutos_tab_config', state.tabExtraConfig);
