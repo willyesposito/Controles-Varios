@@ -144,6 +144,181 @@ const THRESHOLD = 0.01;
 const hasDiff   = d => d !== null && Math.abs(d) > THRESHOLD;
 const diffStyle = d => hasDiff(d) ? 'color:var(--color-danger);font-weight:600;' : '';
 
+// ── Drill-down (zoom de celdas CONTA) ────────────────────────────────────────
+
+/**
+ * Arma el desglose de una celda CONTA: filtra el detalle por CC y categoría,
+ * agrupa por concepto (CUENTA_CONTAB + ID_CONCEPTO) y, dentro de cada concepto,
+ * suma por empleado. Es el equivalente al doble click de una tabla dinámica.
+ *
+ * @param {Array} detalle  — filas clasificadas de runRendVsAsiento (results.meta.detalle)
+ * @param {Object} filtro
+ * @param {string|Set|null} filtro.ccKey — CC normalizado con normCCName(), o Set de varios.
+ *                                          null = todos los CCs
+ * @param {string|null} filtro.catLabel  — label de categoría ('PRECIO', …). null = todas
+ * @returns {Array} conceptos ordenados por |neto| desc:
+ *   { cuentaContab, nCuentaContable, idConcepto, nombreLargo, debe, haber, neto, asientos,
+ *     empleados: [{ idEmpleado, nombre, debe, haber, neto, asientos }] }
+ */
+export function buildDrillRollup(detalle, { ccKey = null, catLabel = null } = {}) {
+  const conceptos = new Map();
+
+  for (const d of (detalle || [])) {
+    // ccKey puede faltar en runs guardados antes de esta versión — fallback al nombre
+    const dKey = d.ccKey || normCCName(d.ccRendimiento);
+    if (ccKey instanceof Set) {
+      if (!ccKey.has(dKey)) continue;
+    } else if (ccKey && dKey !== ccKey) {
+      continue;
+    }
+    if (catLabel && d.categoria !== catLabel) continue;
+
+    const k = `${d.cuentaContab}|${d.idConcepto}`;
+    let c = conceptos.get(k);
+    if (!c) {
+      c = {
+        cuentaContab:    d.cuentaContab,
+        nCuentaContable: d.nCuentaContable,
+        idConcepto:      d.idConcepto,
+        nombreLargo:     d.nombreLargo,
+        debe: 0, haber: 0, neto: 0, asientos: 0,
+        empleados: new Map(),
+      };
+      conceptos.set(k, c);
+    }
+    c.debe += d.debe; c.haber += d.haber; c.neto += d.neto; c.asientos++;
+
+    const empId = d.idEmpleado || '(sin empleado)';
+    let e = c.empleados.get(empId);
+    if (!e) {
+      e = { idEmpleado: d.idEmpleado, nombre: d.empleadoNombre || '', debe: 0, haber: 0, neto: 0, asientos: 0 };
+      c.empleados.set(empId, e);
+    }
+    if (!e.nombre && d.empleadoNombre) e.nombre = d.empleadoNombre;
+    e.debe += d.debe; e.haber += d.haber; e.neto += d.neto; e.asientos++;
+  }
+
+  return [...conceptos.values()]
+    .map(c => ({
+      ...c,
+      empleados: [...c.empleados.values()].sort((a, b) => Math.abs(b.neto) - Math.abs(a.neto)),
+    }))
+    .sort((a, b) => Math.abs(b.neto) - Math.abs(a.neto));
+}
+
+/**
+ * Abre el modal de zoom para una celda CONTA (CC × categoría, o totales).
+ * @param {Object} opts
+ * @param {Array}  opts.detalle  — results.meta.detalle
+ * @param {string|null} opts.ccKey — CC normalizado; null = todos (fila TOTAL GENERAL)
+ * @param {string} opts.catKey    — clave de columna ('precio', …, 'total')
+ * @param {string} opts.ccLabel   — texto a mostrar en el título
+ * @param {number|null} opts.cellValue — valor de la celda, para validar la suma
+ */
+function openDrillModal({ detalle, ccKey, catKey, ccLabel, cellValue }) {
+  // 'total' muestra las 5 categorías en secciones; las demás, una sola
+  const cats = catKey === 'total'
+    ? COLS.filter(c => c.key !== 'total')
+    : COLS.filter(c => c.key === catKey);
+
+  const fmtInt = v => v.toLocaleString('es-AR');
+
+  const empTableHtml = (empleados) => `
+    <table class="data-table data-table--compact" style="margin:var(--sp-2) 0 var(--sp-1);">
+      <thead>
+        <tr>
+          <th>Legajo</th>
+          <th>Apellido y Nombre</th>
+          <th style="text-align:right;">Debe</th>
+          <th style="text-align:right;">Haber</th>
+          <th style="text-align:right;">Neto</th>
+          <th style="text-align:right;">Asientos</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${empleados.map(e => `
+          <tr>
+            <td style="font-family:monospace;white-space:nowrap;">${esc(e.idEmpleado || '—')}</td>
+            <td>${esc(e.nombre || '')}</td>
+            <td style="text-align:right;">${fmt(e.debe)}</td>
+            <td style="text-align:right;">${fmt(e.haber)}</td>
+            <td style="text-align:right;font-weight:600;">${fmt(e.neto)}</td>
+            <td style="text-align:right;color:var(--color-text-muted);">${fmtInt(e.asientos)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+
+  const conceptBlockHtml = (c) => `
+    <details style="border:1px solid var(--color-border);border-radius:var(--radius-sm);margin-bottom:var(--sp-2);background:var(--color-bg);">
+      <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:var(--sp-2);padding:var(--sp-2) var(--sp-3);user-select:none;">
+        <span style="color:var(--color-primary);">▸</span>
+        <span style="font-family:monospace;white-space:nowrap;">${esc(c.cuentaContab || '—')}${c.idConcepto ? ` · ${esc(c.idConcepto)}` : ''}</span>
+        <span style="flex:1;color:var(--color-text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(c.nombreLargo || c.nCuentaContable || '')}</span>
+        <span style="white-space:nowrap;font-weight:600;">${fmt(c.neto)}</span>
+        <span style="white-space:nowrap;color:var(--color-text-muted);font-size:var(--text-sm);">${fmtInt(c.empleados.length)} empl. · ${fmtInt(c.asientos)} asien.</span>
+      </summary>
+      <div style="padding:0 var(--sp-3) var(--sp-2);overflow-x:auto;">
+        ${empTableHtml(c.empleados)}
+      </div>
+    </details>
+  `;
+
+  let grandTotal = 0;
+  const sectionsHtml = cats.map(col => {
+    const conceptos = buildDrillRollup(detalle, { ccKey, catLabel: col.label });
+    if (conceptos.length === 0) return '';
+    const subTotal = conceptos.reduce((s, c) => s + c.neto, 0);
+    grandTotal += subTotal;
+    const header = cats.length > 1
+      ? `<div style="display:flex;align-items:center;gap:var(--sp-2);margin:var(--sp-3) 0 var(--sp-2);padding:var(--sp-1) var(--sp-2);background:${col.hdr};border-radius:var(--radius-sm);font-weight:var(--fw-semibold);font-size:var(--text-sm);">
+           <span style="flex:1;">${esc(col.label)}</span><span>${fmt(subTotal)}</span>
+         </div>`
+      : '';
+    return header + conceptos.map(conceptBlockHtml).join('');
+  }).join('');
+
+  // Aviso defensivo: la suma del desglose debería coincidir con el valor de la celda
+  const mismatch = (cellValue !== null && cellValue !== undefined && Math.abs(grandTotal - cellValue) > THRESHOLD)
+    ? `<div class="alert alert--warning" style="margin:0 0 var(--sp-2);padding:var(--sp-2) var(--sp-3);font-size:var(--text-sm);">
+         ⚠ La suma del desglose (${fmt(grandTotal)}) no coincide con el valor de la celda (${fmt(cellValue)}).
+       </div>`
+    : '';
+
+  const catTitle = catKey === 'total' ? 'COSTO TOTAL' : (cats[0]?.label || '');
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1000;display:flex;align-items:center;justify-content:center;padding:var(--sp-4);';
+  overlay.innerHTML = `
+    <div style="background:var(--color-bg);border-radius:var(--radius-md);box-shadow:var(--shadow-md);max-width:min(980px,96vw);width:100%;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;" role="dialog" aria-modal="true">
+      <div style="display:flex;align-items:center;gap:var(--sp-3);padding:var(--sp-3) var(--sp-4);border-bottom:1px solid var(--color-border);background:var(--color-surface);">
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:var(--fw-semibold);">${esc(ccLabel)} — ${esc(catTitle)}</div>
+          <div style="font-size:var(--text-sm);color:var(--color-text-muted);">CONTA: <strong>${fmt(grandTotal)}</strong> · click en un concepto para ver los empleados</div>
+        </div>
+        <button type="button" class="btn btn--ghost btn--sm" data-drill-close style="font-size:1.1em;line-height:1;">✕</button>
+      </div>
+      <div style="padding:var(--sp-3) var(--sp-4);overflow-y:auto;">
+        ${mismatch}
+        ${sectionsHtml || '<p class="text-muted">Sin filas de CONTA para esta celda.</p>'}
+      </div>
+    </div>
+  `;
+
+  const close = () => {
+    document.removeEventListener('keydown', onKey);
+    overlay.remove();
+  };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  overlay.querySelector('[data-drill-close]').addEventListener('click', close);
+  document.addEventListener('keydown', onKey);
+
+  document.body.appendChild(overlay);
+}
+
 // ── Panel de mapeo (visible en Archivos y en Resultados) ─────────────────────
 
 /**
@@ -458,6 +633,7 @@ export function runRendVsAsiento(rendRows, _tabRows, mapping) {
 
     if (catKey) {
       detalle.push({
+        ccKey:             nameKey,
         ccRendimiento:     g.ccLabel,
         ccOriginal:        wasRedirected ? ccRaw : '',
         categoria:         CAT_LABEL[catKey] || catKey,
@@ -466,6 +642,7 @@ export function runRendVsAsiento(rendRows, _tabRows, mapping) {
         idConcepto:        concepto,
         nombreLargo:       norm(row.nombre_largo),
         idEmpleado:        empleado,
+        empleadoNombre:    [norm(row.apellido_1), norm(row.nombre)].filter(Boolean).join(', '),
         debe:              toNum(row.debe)  ?? 0,
         haber:             toNum(row.haber) ?? 0,
         neto:              valor,
@@ -684,14 +861,25 @@ export function renderRendVsAsientoResults(results, container) {
     }
   }
 
+  // Zoom: celda CONTA clickeable si hay detalle disponible (runs viejos guardados
+  // sin meta.detalle simplemente no ofrecen drill-down).
+  const drillable = (meta?.detalle?.length || 0) > 0;
+  const contaTd = (val, c, ccKey, ccLabel, { strong = false } = {}) => {
+    const baseStyle = `text-align:right;background:${strong ? c.hdr : c.bg};${strong ? 'font-weight:600;' : ''}`;
+    if (!drillable || val === null) return `<td style="${baseStyle}">${fmt(val)}</td>`;
+    return `<td data-drill-cc="${esc(ccKey)}" data-drill-cat="${esc(c.key)}" data-drill-label="${esc(ccLabel)}" data-drill-val="${val}"
+      title="🔍 Ver desglose: conceptos y empleados"
+      style="${baseStyle}cursor:zoom-in;text-decoration:underline dotted;text-underline-offset:3px;">${fmt(val)}</td>`;
+  };
+
   const buildTbody = () => {
     const sorted = sortRows(rows);
-    const arrow = col => sortCol === col ? (sortAsc ? ' ▲' : ' ▼') : '';
 
     const dataRows = sorted.map(r => {
+      const ccKey = normCCName(r.ccName) || '';
       const cells = COLS.map(c => `
         <td style="text-align:right;background:${c.bg};">${fmt(r[c.rKey])}</td>
-        <td style="text-align:right;background:${c.bg};">${fmt(r[c.cKey])}</td>
+        ${contaTd(r[c.cKey], c, ccKey, r.ccName)}
         <td style="text-align:right;background:${c.bg};${diffStyle(r[c.dKey])}">${fmt(r[c.dKey])}</td>
       `).join('');
       const rowStyle = r.sinContaData ? ' style="opacity:0.55;"' : '';
@@ -708,7 +896,7 @@ export function renderRendVsAsientoResults(results, container) {
       const d = totals[c.cKey] - totals[c.rKey];
       return `
         <td style="text-align:right;background:${c.hdr};font-weight:600;">${fmt(totals[c.rKey])}</td>
-        <td style="text-align:right;background:${c.hdr};font-weight:600;">${fmt(totals[c.cKey])}</td>
+        ${contaTd(totals[c.cKey], c, '', 'TOTAL GENERAL', { strong: true })}
         <td style="text-align:right;background:${c.hdr};font-weight:600;${diffStyle(d)}">${fmt(d)}</td>
       `;
     }).join('');
@@ -741,7 +929,8 @@ export function renderRendVsAsientoResults(results, container) {
   let orphansHtml = '';
   if (ccsSoloEnConta && ccsSoloEnConta.length > 0) {
     const orphanRows = ccsSoloEnConta.map(o => {
-      const cells = COLS.map(c => `<td style="text-align:right;background:${c.bg};">${fmt(o[c.cKey])}</td>`).join('');
+      const ccKey = normCCName(o.ccName) || '';
+      const cells = COLS.map(c => contaTd(o[c.cKey], c, ccKey, o.ccName)).join('');
       return `<tr><td>${esc(o.ccName)}</td>${cells}</tr>`;
     }).join('');
     const orphanHeaders = COLS.map(c =>
@@ -818,25 +1007,42 @@ export function renderRendVsAsientoResults(results, container) {
   `;
   container.appendChild(tableWrap);
 
-  // Eventos: sort en tabla principal
-  tableWrap.querySelectorAll('th[data-sort]').forEach(th => {
-    th.addEventListener('click', () => {
-      const col = th.dataset.sort;
-      if (sortCol === col) sortAsc = !sortAsc;
-      else { sortCol = col; sortAsc = true; }
-      // Re-render tbody y encabezados de fila 2
-      const table = tableWrap.querySelector('#js-rva-table');
-      const oldTbody = table.querySelector('#js-rva-tbody');
-      const newTbody = document.createElement('tbody');
-      newTbody.id = 'js-rva-tbody';
-      newTbody.innerHTML = buildTbody().replace('<tbody id="js-rva-tbody">', '').replace('</tbody>', '');
-      oldTbody.replaceWith(newTbody);
-      tableWrap.querySelector('#js-rva-hdr2').innerHTML = buildTheadTr2();
-      // Re-attach sort listeners en los nuevos headers
-      tableWrap.querySelectorAll('th[data-sort]').forEach(th2 => {
-        th2.addEventListener('click', th2._sortFn || (() => {}));
+  // Eventos de la tabla principal por DELEGACIÓN (un solo listener en el wrapper):
+  // - click en celda CONTA → modal de zoom (conceptos + empleados)
+  // - click en header → sort (el tbody se re-renderiza; con delegación los
+  //   listeners no se pierden, cosa que antes pasaba después del primer sort)
+  tableWrap.addEventListener('click', e => {
+    const drillTd = e.target.closest('td[data-drill-cat]');
+    if (drillTd) {
+      // Celda de la fila TOTAL GENERAL (cc vacío): limitar el desglose a los CCs
+      // que efectivamente suman en esa fila (los que matchearon con Rendimiento).
+      const isTotalRow = !drillTd.dataset.drillCc;
+      const ccKey = isTotalRow
+        ? new Set(rows.filter(r => !r.sinContaData).map(r => normCCName(r.ccName)).filter(Boolean))
+        : drillTd.dataset.drillCc;
+      const rawVal = drillTd.dataset.drillVal;
+      openDrillModal({
+        detalle:   meta?.detalle || [],
+        ccKey,
+        catKey:    drillTd.dataset.drillCat,
+        ccLabel:   drillTd.dataset.drillLabel || 'TOTAL GENERAL',
+        cellValue: (rawVal === '' || rawVal === undefined) ? null : Number(rawVal),
       });
-    });
+      return;
+    }
+
+    const th = e.target.closest('th[data-sort]');
+    if (!th) return;
+    const col = th.dataset.sort;
+    if (sortCol === col) sortAsc = !sortAsc;
+    else { sortCol = col; sortAsc = true; }
+    const table = tableWrap.querySelector('#js-rva-table');
+    const oldTbody = table.querySelector('#js-rva-tbody');
+    const newTbody = document.createElement('tbody');
+    newTbody.id = 'js-rva-tbody';
+    newTbody.innerHTML = buildTbody().replace('<tbody id="js-rva-tbody">', '').replace('</tbody>', '');
+    oldTbody.replaceWith(newTbody);
+    tableWrap.querySelector('#js-rva-hdr2').innerHTML = buildTheadTr2();
   });
 
   // Eventos: sort en panel de cuentas
@@ -1079,6 +1285,83 @@ function addDesglosePorCcSheet(wb, detalle) {
   ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: 10 } };
 }
 
+/**
+ * Pestaña "Detalle por empleado" — el mismo zoom de la pantalla pero plano:
+ * una fila por CC × Categoría × Cuenta × Concepto × Empleado, con autofiltro
+ * para poder filtrar como tabla dinámica.
+ */
+function addDetallePorEmpleadoSheet(wb, detalle) {
+  const byKey = new Map();
+  for (const d of detalle) {
+    const k = [d.ccRendimiento, d.categoria, d.cuentaContab, d.idConcepto, d.idEmpleado].join('|');
+    let r = byKey.get(k);
+    if (!r) {
+      r = {
+        cc:              d.ccRendimiento,
+        cat:             d.categoria,
+        cuentaContab:    d.cuentaContab,
+        nCuentaContable: d.nCuentaContable,
+        idConcepto:      d.idConcepto,
+        nombreLargo:     d.nombreLargo,
+        idEmpleado:      d.idEmpleado,
+        empleadoNombre:  d.empleadoNombre || '',
+        debe: 0, haber: 0, neto: 0, asientos: 0,
+      };
+      byKey.set(k, r);
+    }
+    if (!r.empleadoNombre && d.empleadoNombre) r.empleadoNombre = d.empleadoNombre;
+    r.debe += d.debe; r.haber += d.haber; r.neto += d.neto; r.asientos++;
+  }
+
+  const flatRows = [...byKey.values()].sort((a, b) =>
+    a.cc.localeCompare(b.cc, 'es') ||
+    DETAIL_CAT_ORDER.indexOf(a.cat) - DETAIL_CAT_ORDER.indexOf(b.cat) ||
+    a.cuentaContab.localeCompare(b.cuentaContab, 'es') ||
+    a.idConcepto.localeCompare(b.idConcepto, 'es') ||
+    Math.abs(b.neto) - Math.abs(a.neto)
+  );
+
+  const ws = wb.addWorksheet('Detalle por empleado');
+  ws.columns = [
+    { width: 22 }, { width: 18 }, { width: 16 }, { width: 28 },
+    { width: 14 }, { width: 28 }, { width: 12 }, { width: 28 },
+    { width: 16 }, { width: 16 }, { width: 16 }, { width: 9 },
+  ];
+
+  const solidFill = argb => ({ type: 'pattern', pattern: 'solid', fgColor: { argb } });
+  const base = { name: 'Calibri', size: 10 };
+  const bold = { ...base, bold: true };
+  const numFmt = '#,##0.00';
+
+  const hdr = ws.addRow([
+    'CC Rendimiento', 'Categoría', 'CUENTA_CONTAB', 'N_CUENTA_CONTABLE',
+    'ID_CONCEPTO', 'NOMBRE_LARGO', 'Legajo', 'Apellido y Nombre',
+    'DEBE', 'HABER', 'NETO', 'Asientos',
+  ]);
+  hdr.font = { ...bold };
+  hdr.eachCell(cell => {
+    cell.fill = solidFill('FFE0E0E0');
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.border = { bottom: { style: 'medium', color: { argb: 'FFB0B0B0' } } };
+  });
+
+  for (const r of flatRows) {
+    const dr = ws.addRow([
+      r.cc, r.cat, r.cuentaContab, r.nCuentaContable,
+      r.idConcepto, r.nombreLargo, r.idEmpleado, r.empleadoNombre,
+      r.debe, r.haber, r.neto, r.asientos,
+    ]);
+    dr.eachCell((cell, col) => {
+      cell.font = { ...base };
+      if (col >= 9 && col <= 11) cell.numFmt = numFmt;
+      if (col >= 9) cell.alignment = { horizontal: 'right' };
+    });
+  }
+
+  ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 1 }];
+  ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: 12 } };
+}
+
 async function exportRendVsAsientoToXlsx(results) {
   await loadExcelJS();
   const { rows, ccsSoloEnConta, meta, period } = results;
@@ -1204,6 +1487,7 @@ async function exportRendVsAsientoToXlsx(results) {
   // ── Pestaña: Desglose por CC (rolled-up con subtotales por CC y categoría) ──
   if (detalle.length > 0) {
     addDesglosePorCcSheet(wb, detalle);
+    addDetallePorEmpleadoSheet(wb, detalle);
   }
 
   if (ccsSoloEnConta && ccsSoloEnConta.length > 0) {
