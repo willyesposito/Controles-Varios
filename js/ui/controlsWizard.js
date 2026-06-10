@@ -694,11 +694,16 @@ function renderStepFiles(container, state, root) {
         autoDetect,
         onComplete:  (data) => {
           if (!state.controlFiles[controlId]) state.controlFiles[controlId] = {};
+          const prev = state.controlFiles[controlId][fileSpec.key];
           state.controlFiles[controlId][fileSpec.key] = data;
           renderWizardNav(root, state);
           // CONTA recién cargado → re-renderizar el step para que el editor de
           // rend_vs_asiento muestre los nombres de cuentas/conceptos al lado de cada código.
-          if (controlId === 'rend_vs_asiento' && fileSpec.key === 'conta') {
+          // Guard de identidad: renderAlreadyLoaded llama a onComplete de forma sincrónica
+          // al re-mostrar un archivo ya cargado. Sin este chequeo, el re-render volvería a
+          // inicializar la carga de CONTA y dispararía onComplete otra vez → bucle re-entrante
+          // que rompía/ocultaba el panel de mapeo. Solo re-renderizamos si la CONTA es nueva.
+          if (controlId === 'rend_vs_asiento' && fileSpec.key === 'conta' && prev !== data) {
             renderStepFiles(container, state, root);
           }
         },
