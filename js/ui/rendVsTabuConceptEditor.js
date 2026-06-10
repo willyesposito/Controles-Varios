@@ -47,9 +47,35 @@ export function renderConceptGroupingEditor(container, tabRows, currentGrouping,
     return s;
   }
 
+  // Cuántos conceptos preconfigurados se encontraron en el Tabulado cargado.
+  // Si son 0 (o muy pocos) y hay conceptos asignados, casi seguro se cargó el
+  // archivo equivocado en el casillero Tabulado (ej: un recibo en vez del Tabulado).
+  function countMatchedAssigned() {
+    let total = 0, matched = 0;
+    for (const cat of CAT_META) {
+      for (const e of (grouping[cat.key] || [])) {
+        total++;
+        if (colByCode[e.code]) matched++;
+      }
+    }
+    return { total, matched };
+  }
+
   function renderEditor() {
     const assignedCodes = getAssignedCodes();
     const orphanCodes   = allCodes.filter(c => !assignedCodes.has(c));
+    const { total: assignedTotal, matched: assignedMatched } = countMatchedAssigned();
+
+    // Aviso fuerte si no se encontró (casi) ningún concepto preconfigurado
+    const lowMatch = assignedTotal > 0 && assignedMatched <= Math.min(2, assignedTotal - 1);
+    const warningBanner = lowMatch ? `
+      <div style="margin-bottom:var(--sp-3);padding:var(--sp-3) var(--sp-4);border:1px solid var(--color-warning);background:var(--color-warning-bg, rgba(234,179,8,0.08));border-radius:var(--radius-md);font-size:var(--text-sm);">
+        <strong style="color:var(--color-warning);">⚠ Solo se detectaron ${allCodes.length} columna${allCodes.length !== 1 ? 's' : ''} de concepto en el Tabulado</strong>
+        (de los ${assignedTotal} conceptos preconfigurados, ${assignedMatched === 0 ? 'ninguno coincide' : `solo ${assignedMatched} coinciden`}).
+        <br>Esto suele pasar cuando el archivo cargado en el casillero <strong>Tabulado</strong> no es el correcto
+        (por ejemplo un recibo o un rendimiento, en vez del Tabulado de columnas tipo <code>1003-SUELDO</code>).
+        Verificá el archivo cargado más arriba y, si hace falta, tocá <strong>"Cambiar"</strong> para subir el Tabulado correcto.
+      </div>` : '';
 
     const categorySections = CAT_META.map(cat => {
       const entries = grouping[cat.key] || [];
@@ -131,6 +157,7 @@ export function renderConceptGroupingEditor(container, tabRows, currentGrouping,
             ↺ Restaurar defaults
           </button>
         </div>
+        ${warningBanner}
         <div style="display:flex;align-items:center;gap:var(--sp-2);margin-bottom:var(--sp-3);flex-wrap:wrap;">
           <span style="font-size:12px;color:var(--color-muted);">Ordenar:</span>
           ${['none','num','alpha'].map(mode => {
