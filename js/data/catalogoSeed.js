@@ -18,14 +18,14 @@ export const CATALOGO_SEED = [
     descripcion:   'Sueldo Base',
     clasificacion: 'remu',
     controles:     ['brutos'],
-    alias:         ['sueldo', '1003-', 'sal base'],
+    alias:         ['sueldo', '1003-', 'sal base', 'sueldo bruto', 'salario base', 'salario bruto', 'sueldo basico'],
   },
   {
     codigo:        'A_CTA_FUT_AUMEN',
     descripcion:   'A cuenta de futuros aumentos',
     clasificacion: 'remu',
     controles:     ['brutos'],
-    alias:         ['a_cta_fut', 'acta_fut', '1017-', 'a cta fut', 'a cuenta aumento'],
+    alias:         ['a_cta_fut', 'acta_fut', '1017-', 'a cta fut', 'a cuenta aumento', 'a cuenta futuros aumentos', 'a cuenta de futuros aumentos', 'acuenta futuros aumentos'],
   },
 
   // ── GS Pers ─────────────────────────────────────────────────────────────

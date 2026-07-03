@@ -8,8 +8,10 @@
 //
 // Estrategia de matching (en orden):
 //   1. Exact match (normalizado) contra CODIGO o cualquier ALIAS
-//   2. Levenshtein distance ≤ 1 contra CODIGO (para typos como "SAL BASE" vs "SAL_BASE")
-//   3. Sin match → header queda "huérfano"
+//   2. Contains — el header contiene el CODIGO/ALIAS como substring (para headers
+//      descriptivos completos, ej. "Sueldo Bruto" contiene el alias "sueldo")
+//   3. Levenshtein distance ≤ 1 contra CODIGO (para typos como "SAL BASE" vs "SAL_BASE")
+//   4. Sin match → header queda "huérfano"
 
 /**
  * Normaliza un string para comparación robusta:
@@ -71,7 +73,15 @@ export function findHeaderForConcept(concept, headers) {
   const exactAlias = nHeaders.find(h => nAliases.includes(h.norm));
   if (exactAlias) return { header: exactAlias.raw, strategy: 'alias' };
 
-  // 3. Fuzzy contra CODIGO con distance ≤ 1 (sólo para CODIGOs de longitud ≥ 4
+  // 3. Contains — el header del archivo trae palabras de más (ej. "Sueldo Bruto"
+  //    en vez de "Sueldo", o "A cuenta futuros aumentos" en vez del alias abreviado).
+  //    Solo se compara contra tokens de longitud ≥ 4 para evitar falsos positivos
+  //    con códigos/alias muy cortos (ej. "CC", "1017").
+  const containsTokens = [nCodigo, ...nAliases].filter(t => t.length >= 4);
+  const contains = nHeaders.find(h => containsTokens.some(t => h.norm.includes(t)));
+  if (contains) return { header: contains.raw, strategy: 'contains' };
+
+  // 4. Fuzzy contra CODIGO con distance ≤ 1 (sólo para CODIGOs de longitud ≥ 4
   //    para evitar matches absurdos en strings muy cortos)
   if (nCodigo.length >= 4) {
     const fuzzy = nHeaders

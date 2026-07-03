@@ -654,10 +654,21 @@ function renderStepFiles(container, state, root) {
       existingData: state.tab,
       autoDetect:  AUTO_DETECT.tab_control,
       onComplete:  (data) => {
+        const prev = state.tab;
         state.tab = data;
         setTabSessionCache(data, state.clientId);
         renderWizardNav(root, state);
         renderTabuladoAnalysis(analysisEl, state.tab, catalogRows, state.selectedControls);
+        // Tabulado nuevo (no re-entrante) → re-renderizar el step completo para que el
+        // panel "Columnas del Tabulado" (Brutos/GS Pers/NR) recalcule tabHeaders con las
+        // columnas ya disponibles. Sin esto, ese panel quedaba armado con tabHeaders=[]
+        // (calculado antes de que existiera el Tabulado) y sus selects nunca mostraban
+        // ninguna columna para elegir. Guard de identidad: renderAlreadyLoaded llama a
+        // onComplete de forma sincrónica al re-mostrar un archivo ya cargado — sin este
+        // chequeo, el re-render volvería a dispararlo y entraría en bucle infinito.
+        if (prev !== data) {
+          renderStepFiles(container, state, root);
+        }
       },
     });
   }
