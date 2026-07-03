@@ -60,6 +60,7 @@ export function renderTabuladoAnalysis(container, tabData, catalogRows, selected
   const stratBadge = (strategy) => {
     if (strategy === 'exact') return '<span style="color:var(--color-match-exact);font-size:0.75em;font-weight:600;">✓ exacto</span>';
     if (strategy === 'alias') return '<span style="color:var(--color-match-exact);font-size:0.75em;">↺ alias</span>';
+    if (strategy === 'contains') return '<span style="color:var(--color-warning);font-size:0.75em;">⊃ parcial</span>';
     if (strategy === 'fuzzy') return '<span style="color:var(--color-warning);font-size:0.75em;">~ fuzzy</span>';
     return '';
   };
@@ -159,9 +160,9 @@ export function renderTabuladoAnalysis(container, tabData, catalogRows, selected
         </details>
 
         ${nOrph > 0 ? `
-        <details open>
+        <details>
           <summary style="cursor:pointer;font-size:var(--text-sm);font-weight:var(--fw-semibold);list-style:none;display:flex;gap:var(--sp-2);align-items:center;color:var(--color-warning);">
-            <span>▾</span> ⚠ Huérfanas (${nOrph}) <span style="color:var(--color-text-muted);font-weight:400;font-size:0.85em;">— no están en el catálogo</span>
+            <span>▸</span> ⚠ Huérfanas (${nOrph}) <span style="color:var(--color-text-muted);font-weight:400;font-size:0.85em;">— no están en el catálogo</span>
           </summary>
           <div style="margin-top:var(--sp-2);overflow-x:auto;">${orphHtml}</div>
         </details>
