@@ -41,17 +41,17 @@ export function runBrutos(brutosRows, tabRows, mapping) {
   const aCuFutAuTabCol  = tm.tabACuFutAumenColumn || null;
 
   // Índice del Tabulado: legajo → { valSal, valAcu }
+  // Un legajo puede tener más de una liquidación en el mes (ej: baja después
+  // de haber cobrado el mensual). Meta4 suma todas las liquidaciones del
+  // legajo en el Reporte de Brutos real, así que consolidamos igual acá para
+  // comparar contra el mismo total (en vez de quedarnos solo con la última).
+  const tabGroups = groupTabRowsByLegajo(tabRows, tm.empleadoColumn);
   const tabByLegajo = new Map();
-  for (const row of tabRows) {
-    const id = norm(row[tm.empleadoColumn]);
-    if (!id) continue;
-    const valSal = salBaseTabCol
-      ? toNum(row[salBaseTabCol])
-      : (toNum(row['1003']) ?? toNum(row[1003]));
-    const valAcu = aCuFutAuTabCol
-      ? toNum(row[aCuFutAuTabCol])
-      : (toNum(row['1017']) ?? toNum(row[1017]));
-    const nombre = tm.apellidoNombreColumn ? norm(row[tm.apellidoNombreColumn]) : '';
+  for (const [id, group] of tabGroups) {
+    const last   = group[group.length - 1];
+    const valSal = sumTabColumn(group, salBaseTabCol, '1003');
+    const valAcu = sumTabColumn(group, aCuFutAuTabCol, '1017');
+    const nombre = tm.apellidoNombreColumn ? norm(last[tm.apellidoNombreColumn]) : '';
     tabByLegajo.set(id, { valSal, valAcu, nombre });
   }
 
@@ -222,21 +222,27 @@ export function runBrutosReporte(_primaryRows, tabRows, mapping) {
   const nombreCol   = tm.tabNombreColumn   || tm.apellidoNombreColumn || null;
   const apellido1Col = tm.tabApellido1Column || null;
 
-  const rows = tabRows
-    .filter(row => !!norm(row[tm.empleadoColumn]))
-    .map(row => ({
+  // Un legajo puede tener más de una liquidación en el mes (ej: baja después
+  // de haber cobrado el mensual). Consolidamos por legajo: los importes se
+  // suman (igual que hace Meta4 en el Reporte de Brutos real) y los datos de
+  // referencia (nombre, fechas, puesto) se toman de la última liquidación.
+  const tabGroups = groupTabRowsByLegajo(tabRows, tm.empleadoColumn);
+  const rows = [...tabGroups.entries()].map(([legajo, group]) => {
+    const last = group[group.length - 1];
+    return {
       fecIni:      fecIniStr,
       fecFin:      fecFinStr,
-      legajo:      norm(row[tm.empleadoColumn]),
-      nombre:      nombreCol    ? norm(row[nombreCol])                          : null,
-      apellido1:   apellido1Col ? norm(row[apellido1Col])                      : null,
-      fecAlta:     tm.tabFecAltaColumn ? fmtDate(row[tm.tabFecAltaColumn])     : null,
-      fecBaja:     tm.tabFecBajaColumn ? fmtDate(row[tm.tabFecBajaColumn])     : null,
-      fecPago:     tm.tabFecPagoColumn ? fmtDate(row[tm.tabFecPagoColumn])     : null,
-      salBase:     tm.tabSalBaseColumn     ? toNum(row[tm.tabSalBaseColumn])  : null,
-      aCuFutAumen: tm.tabACuFutAumenColumn ? toNum(row[tm.tabACuFutAumenColumn]) : null,
-      puesto:      tm.puestoColumn         ? norm(row[tm.puestoColumn])       : null,
-    }));
+      legajo,
+      nombre:      nombreCol    ? norm(last[nombreCol])                      : null,
+      apellido1:   apellido1Col ? norm(last[apellido1Col])                  : null,
+      fecAlta:     tm.tabFecAltaColumn ? fmtDate(last[tm.tabFecAltaColumn]) : null,
+      fecBaja:     tm.tabFecBajaColumn ? fmtDate(last[tm.tabFecBajaColumn]) : null,
+      fecPago:     tm.tabFecPagoColumn ? fmtDate(last[tm.tabFecPagoColumn]) : null,
+      salBase:     sumTabColumn(group, tm.tabSalBaseColumn,     null),
+      aCuFutAumen: sumTabColumn(group, tm.tabACuFutAumenColumn, null),
+      puesto:      tm.puestoColumn ? norm(last[tm.puestoColumn]) : null,
+    };
+  });
 
   return {
     summary: { total: rows.length },
@@ -516,6 +522,35 @@ function toNum(v) {
   if (v === null || v === undefined || String(v).trim() === '') return null;
   const n = Number(v);
   return isNaN(n) ? null : n;
+}
+
+// Agrupa las filas del Tabulado por legajo, preservando el orden de aparición
+// (tanto de los legajos como de las liquidaciones dentro de cada uno).
+function groupTabRowsByLegajo(tabRows, empleadoColumn) {
+  const groups = new Map();
+  for (const row of tabRows) {
+    const id = norm(row[empleadoColumn]);
+    if (!id) continue;
+    if (!groups.has(id)) groups.set(id, []);
+    groups.get(id).push(row);
+  }
+  return groups;
+}
+
+// Suma un mismo concepto a través de varias liquidaciones del mismo legajo.
+// `col` es la columna configurada por el usuario; si no está configurada y se
+// pasa `fallbackCode`, intenta leer esa columna por código (ej: '1003').
+// Devuelve null si ninguna liquidación tiene datos (para distinguir de 0).
+function sumTabColumn(rows, col, fallbackCode) {
+  if (!col && !fallbackCode) return null;
+  let total = null;
+  for (const row of rows) {
+    const v = col
+      ? toNum(row[col])
+      : (toNum(row[fallbackCode]) ?? toNum(row[Number(fallbackCode)]));
+    total = (total === null && v === null) ? null : (total ?? 0) + (v ?? 0);
+  }
+  return total;
 }
 
 function fmtRaw(v) {
