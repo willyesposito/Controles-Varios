@@ -51,7 +51,7 @@ export const CATALOGO_SEED = [
   { codigo: 'INDEM_ANT_FALLE',  descripcion: 'Indemnización Antigüedad Fallecim.',  clasificacion: 'no_remu', controles: ['nr'], alias: ['indem ant falle'] },
   { codigo: 'INDEM_INTEG',      descripcion: 'Indemnización Integración',           clasificacion: 'no_remu', controles: ['nr'], alias: [] },
   { codigo: 'SAC_INDEM_INTEG',  descripcion: 'SAC sobre Indem. Integración',        clasificacion: 'no_remu', controles: ['nr'], alias: ['sac indem integ'] },
-  { codigo: 'INDM_MATERNIDAD',  descripcion: 'Indemnización Maternidad',            clasificacion: 'no_remu', controles: ['nr'], alias: ['indem_maternidad', 'maternidad'] },
+  { codigo: 'INDM_MATERNIDAD',  descripcion: 'Indemnización Maternidad',            clasificacion: 'no_remu', controles: ['nr'], alias: ['indem_maternidad'] },
   { codigo: 'VAC_NO_GOZADAS',   descripcion: 'Vacaciones No Gozadas',               clasificacion: 'no_remu', controles: ['nr'], alias: ['vac no gozadas'] },
   { codigo: 'VAC_NO_GOZ_SAC',   descripcion: 'SAC s/ Vacaciones No Gozadas',        clasificacion: 'no_remu', controles: ['nr'], alias: ['vac no goz sac'] },
   { codigo: 'GRAT_VAC',         descripcion: 'Gratificación Vacaciones',            clasificacion: 'no_remu', controles: ['nr'], alias: ['grat vac'] },

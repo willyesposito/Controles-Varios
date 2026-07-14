@@ -105,6 +105,18 @@ function hasAnyNrValue(r) {
   );
 }
 
+const fmtNum = v => v === null
+  ? '—'
+  : v.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const isDif = v => v !== null && Math.abs(v) > 0.01;
+
+// Colores por grupo (compartidos entre tabla y export)
+const INDEM_BG  = 'rgba(56,142,60,0.08)';
+const INDEM_HDR = 'rgba(56,142,60,0.18)';
+const OTROS_BG  = 'rgba(245,124,0,0.08)';
+const OTROS_HDR = 'rgba(245,124,0,0.18)';
+
 export function renderNrResults(results, container) {
   const { rows } = results;
 
@@ -113,45 +125,69 @@ export function renderNrResults(results, container) {
     return;
   }
 
-  const isDif = v => v !== null && Math.abs(v) > 0.01;
+  const rowHasDiff = r => NR_CONCEPTS.some(c => isDif(r.valores[c.key].ctrl));
 
+  // Empleados con algún valor NR (los "evaluables"); dentro de ellos, los que tienen diferencia.
   const relevantRows = rows.filter(hasAnyNrValue);
-  const filteredResults = { ...results, rows: relevantRows };
+  const diffRows     = relevantRows.filter(rowHasDiff);
+  const okCount      = relevantRows.length - diffRows.length;
+  const noNrCount    = rows.length - relevantRows.length;
 
-  if (relevantRows.length === 0) {
-    container.innerHTML = `<p class="text-muted" style="padding:var(--sp-4);">Ningún empleado tiene valores NR distintos de cero en este período.</p>`;
-    return;
-  }
+  container.innerHTML = '';
 
-  const fmt = v => v === null
-    ? '—'
-    : v.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-  // Hero: cuántos empleados (de los que tienen algún valor NR) están bien vs con diferencia
-  const diffCount = relevantRows.filter(r => NR_CONCEPTS.some(c => isDif(r.valores[c.key].ctrl))).length;
-  const okCount   = relevantRows.length - diffCount;
-  const hiddenCount = rows.length - relevantRows.length;
-
+  // ── Hero: sin diferencia vs con diferencia ────────────────────────────────
   const hero = document.createElement('div');
   hero.style.cssText = 'display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-5);padding:var(--sp-3) var(--sp-4);margin:var(--sp-3) var(--sp-3) 0;background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);';
   hero.innerHTML = `
     <div style="display:flex;align-items:baseline;gap:8px;">
       <span style="font-size:1.8em;font-weight:700;color:var(--color-success);">${okCount}</span>
-      <span style="font-size:var(--text-sm);color:var(--color-text-muted);">bien</span>
+      <span style="font-size:var(--text-sm);color:var(--color-text-muted);">sin diferencia</span>
     </div>
     <div style="display:flex;align-items:baseline;gap:8px;">
-      <span style="font-size:1.8em;font-weight:700;color:${diffCount > 0 ? 'var(--color-danger)' : 'var(--color-text-muted)'};">${diffCount}</span>
+      <span style="font-size:1.8em;font-weight:700;color:${diffRows.length > 0 ? 'var(--color-danger)' : 'var(--color-text-muted)'};">${diffRows.length}</span>
       <span style="font-size:var(--text-sm);color:var(--color-text-muted);">con diferencia</span>
     </div>
     <div style="margin-left:auto;font-size:var(--text-sm);color:var(--color-text-muted);text-align:right;">
-      ${relevantRows.length} empleados con algún valor NR
-      ${hiddenCount > 0 ? `<br>${hiddenCount} sin valores NR (no se muestran)` : ''}
+      ${relevantRows.length} empleado${relevantRows.length === 1 ? '' : 's'} con valores NR
+      ${noNrCount > 0 ? `<br>${noNrCount} sin valores NR (no se muestran)` : ''}
     </div>
   `;
+  container.appendChild(hero);
 
-  // Botón exportar
+  // Si no hay ninguna diferencia, la tabla no aporta nada: mostramos el OK y salimos.
+  if (diffRows.length === 0) {
+    const ok = document.createElement('div');
+    ok.style.cssText = 'display:flex;align-items:center;gap:var(--sp-2);margin:var(--sp-3);padding:var(--sp-4);border:1px solid var(--color-border);border-left:4px solid var(--color-success);border-radius:var(--radius-md);background:var(--color-surface);';
+    ok.innerHTML = `
+      <span style="font-size:var(--text-xl);color:var(--color-success);">✓</span>
+      <span>Todos los empleados con valores NR coinciden con el Tabulado. No hay diferencias para revisar.</span>
+    `;
+    container.appendChild(ok);
+    return;
+  }
+
+  const filteredResults = { ...results, rows: diffRows };
+
+  // ── Toolbar: filtro por concepto + exportar ───────────────────────────────
+  // Sólo listamos conceptos que efectivamente tienen alguna diferencia.
+  const conceptsWithDiff = NR_CONCEPTS.filter(c => diffRows.some(r => isDif(r.valores[c.key].ctrl)));
+
   const toolbar = document.createElement('div');
-  toolbar.style.cssText = 'display:flex;justify-content:flex-end;padding:var(--sp-3) var(--sp-3) 0;';
+  toolbar.style.cssText = 'display:flex;flex-wrap:wrap;gap:var(--sp-3);justify-content:space-between;align-items:flex-end;padding:var(--sp-3) var(--sp-3) 0;';
+
+  const filterGroup = document.createElement('div');
+  filterGroup.className = 'form-group';
+  filterGroup.style.cssText = 'margin-bottom:0;min-width:240px;';
+  filterGroup.innerHTML = `
+    <label class="form-label" style="font-size:var(--text-sm);">Filtrar por concepto</label>
+    <select class="form-select form-select--sm" data-nr-concept-filter>
+      <option value="all">Todos los conceptos con diferencia (${conceptsWithDiff.length})</option>
+      ${conceptsWithDiff.map(c =>
+        `<option value="${esc(c.key)}">${esc(c.label)}</option>`
+      ).join('')}
+    </select>
+  `;
+
   const exportBtn = document.createElement('button');
   exportBtn.className = 'btn btn--primary btn--sm';
   exportBtn.textContent = '⬇ Exportar .xlsx';
@@ -167,61 +203,72 @@ export function renderNrResults(results, container) {
       exportBtn.textContent = '⬇ Exportar .xlsx';
     }
   });
+
+  toolbar.appendChild(filterGroup);
   toolbar.appendChild(exportBtn);
-
-  // Colores por grupo
-  const INDEM_BG  = 'rgba(56,142,60,0.08)';
-  const INDEM_HDR = 'rgba(56,142,60,0.18)';
-  const OTROS_BG  = 'rgba(245,124,0,0.08)';
-  const OTROS_HDR = 'rgba(245,124,0,0.18)';
-
-  const cellBg = c => c.group === 'indem' ? INDEM_BG : OTROS_BG;
-
-  // Tabla resumen HTML: Legajo + # difs + conceptos con diferencia
-  // Sólo empleados con algún valor NR (ver hasAnyNrValue) — el resto no aporta nada al control.
-  const tableWrap = document.createElement('div');
-  tableWrap.style.overflowX = 'auto';
-  tableWrap.innerHTML = `
-    <table class="data-table data-table--compact">
-      <thead>
-        <tr>
-          <th>Legajo</th>
-          <th style="text-align:center;"># Difs</th>
-          ${NR_CONCEPTS.map(c => {
-            const bg = c.group === 'indem' ? INDEM_HDR : OTROS_HDR;
-            return `<th style="background:${bg};font-size:0.72em;white-space:nowrap;">${esc(c.label)}</th>`;
-          }).join('')}
-        </tr>
-      </thead>
-      <tbody>
-        ${relevantRows.map(r => {
-          const difs = NR_CONCEPTS.filter(c => isDif(r.valores[c.key].ctrl)).length;
-          const rowStyle = difs > 0 ? '' : '';
-          return `
-            <tr>
-              <td>${esc(r.legajo)}</td>
-              <td style="text-align:center;font-weight:${difs > 0 ? '700' : '400'};color:${difs > 0 ? 'var(--color-danger)' : 'inherit'};">${difs || '—'}</td>
-              ${NR_CONCEPTS.map(c => {
-                const v     = r.valores[c.key];
-                const hasDif = isDif(v.ctrl);
-                const style  = `text-align:right;background:${cellBg(c)};${hasDif ? 'color:var(--color-danger);font-weight:600;' : ''}`;
-                return `<td style="${style}">${fmt(v.ctrl)}</td>`;
-              }).join('')}
-            </tr>
-          `;
-        }).join('')}
-      </tbody>
-    </table>
-    <p class="text-muted" style="font-size:var(--text-sm);padding:var(--sp-2) var(--sp-3);">
-      Valores mostrados: Tab − NR. Cero = OK. Rojo = diferencia.
-      Exportá el .xlsx para ver los valores originales de cada fuente.
-    </p>
-  `;
-
-  container.innerHTML = '';
-  container.appendChild(hero);
   container.appendChild(toolbar);
-  container.appendChild(tableWrap);
+
+  // ── Tabla (se re-renderiza al cambiar el filtro de concepto) ───────────────
+  const cellBg = c => c.group === 'indem' ? INDEM_BG : OTROS_BG;
+  const tableHost = document.createElement('div');
+  container.appendChild(tableHost);
+
+  function renderTable(selectedKey) {
+    // Filas: todas las que tienen diferencia, o sólo las que difieren en el concepto elegido.
+    const shownRows = selectedKey === 'all'
+      ? diffRows
+      : diffRows.filter(r => isDif(r.valores[selectedKey].ctrl));
+
+    // Columnas: sólo las que tienen diferencia (oculta las 0/vacías), o sólo la elegida.
+    const shownConcepts = selectedKey === 'all'
+      ? conceptsWithDiff
+      : NR_CONCEPTS.filter(c => c.key === selectedKey);
+
+    const hiddenCols = NR_CONCEPTS.length - shownConcepts.length;
+
+    tableHost.style.overflowX = 'auto';
+    tableHost.innerHTML = `
+      <table class="data-table data-table--compact">
+        <thead>
+          <tr>
+            <th>Legajo</th>
+            <th style="text-align:center;"># Difs</th>
+            ${shownConcepts.map(c => {
+              const bg = c.group === 'indem' ? INDEM_HDR : OTROS_HDR;
+              return `<th style="background:${bg};font-size:0.72em;white-space:nowrap;">${esc(c.label)}</th>`;
+            }).join('')}
+          </tr>
+        </thead>
+        <tbody>
+          ${shownRows.map(r => {
+            const difs = NR_CONCEPTS.filter(c => isDif(r.valores[c.key].ctrl)).length;
+            return `
+              <tr>
+                <td>${esc(r.legajo)}</td>
+                <td style="text-align:center;font-weight:700;color:var(--color-danger);">${difs}</td>
+                ${shownConcepts.map(c => {
+                  const v      = r.valores[c.key];
+                  const hasDif = isDif(v.ctrl);
+                  const style  = `text-align:right;background:${cellBg(c)};${hasDif ? 'color:var(--color-danger);font-weight:600;' : ''}`;
+                  return `<td style="${style}">${fmtNum(v.ctrl)}</td>`;
+                }).join('')}
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+      <p class="text-muted" style="font-size:var(--text-sm);padding:var(--sp-2) var(--sp-3);">
+        Mostrando ${shownRows.length} empleado${shownRows.length === 1 ? '' : 's'} con diferencia.
+        Valores: Tab − NR (rojo = diferencia).
+        ${hiddenCols > 0 ? `Se ocultan ${hiddenCols} concepto${hiddenCols === 1 ? '' : 's'} sin diferencias.` : ''}
+        Exportá el .xlsx para ver los valores originales de cada fuente.
+      </p>
+    `;
+  }
+
+  filterGroup.querySelector('[data-nr-concept-filter]')
+    .addEventListener('change', (e) => renderTable(e.target.value));
+  renderTable('all');
 }
 
 // ── Modo 2: Generar Reporte ───────────────────────────────────────────────────
@@ -267,6 +314,11 @@ export function summarizeNrReporte(results) {
   };
 }
 
+// En "Generar Reporte" cada fila trae los conceptos como r[c.key] (número o null).
+function reporteRowHasValue(r) {
+  return NR_CONCEPTS.some(c => r[c.key] !== null && Math.abs(r[c.key]) > 0.01);
+}
+
 export function renderNrReporteResults(results, container) {
   const { rows } = results;
 
@@ -275,15 +327,61 @@ export function renderNrReporteResults(results, container) {
     return;
   }
 
-  const fmt    = v => v === null ? '—' : v.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmtTxt = v => v === null ? '—' : esc(String(v));
 
-  const INDEM_HDR = 'rgba(56,142,60,0.18)';
-  const OTROS_HDR = 'rgba(245,124,0,0.18)';
+  // Sólo empleados con algún valor NR distinto de cero.
+  const relevantRows = rows.filter(reporteRowHasValue);
+  const noNrCount    = rows.length - relevantRows.length;
 
-  // Botón exportar
+  container.innerHTML = '';
+
+  // ── Hero: cuántos empleados entran al reporte ─────────────────────────────
+  const hero = document.createElement('div');
+  hero.style.cssText = 'display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-5);padding:var(--sp-3) var(--sp-4);margin:var(--sp-3) var(--sp-3) 0;background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);';
+  hero.innerHTML = `
+    <div style="display:flex;align-items:baseline;gap:8px;">
+      <span style="font-size:1.8em;font-weight:700;color:var(--color-wordmark);">${relevantRows.length}</span>
+      <span style="font-size:var(--text-sm);color:var(--color-text-muted);">empleado${relevantRows.length === 1 ? '' : 's'} con valores NR</span>
+    </div>
+    ${noNrCount > 0 ? `
+      <div style="margin-left:auto;font-size:var(--text-sm);color:var(--color-text-muted);text-align:right;">
+        ${noNrCount} sin valores NR (no se muestran)
+      </div>` : ''}
+  `;
+  container.appendChild(hero);
+
+  if (relevantRows.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'text-muted';
+    empty.style.padding = 'var(--sp-4)';
+    empty.textContent = 'Ningún empleado tiene valores NR distintos de cero en este período.';
+    container.appendChild(empty);
+    return;
+  }
+
+  const filteredResults = { ...results, rows: relevantRows };
+
+  // ── Toolbar: filtro por concepto + exportar ───────────────────────────────
+  const conceptsWithValue = NR_CONCEPTS.filter(c =>
+    relevantRows.some(r => r[c.key] !== null && Math.abs(r[c.key]) > 0.01)
+  );
+
   const toolbar = document.createElement('div');
-  toolbar.style.cssText = 'display:flex;justify-content:flex-end;padding:var(--sp-3) var(--sp-3) 0;';
+  toolbar.style.cssText = 'display:flex;flex-wrap:wrap;gap:var(--sp-3);justify-content:space-between;align-items:flex-end;padding:var(--sp-3) var(--sp-3) 0;';
+
+  const filterGroup = document.createElement('div');
+  filterGroup.className = 'form-group';
+  filterGroup.style.cssText = 'margin-bottom:0;min-width:240px;';
+  filterGroup.innerHTML = `
+    <label class="form-label" style="font-size:var(--text-sm);">Filtrar por concepto</label>
+    <select class="form-select form-select--sm" data-nr-concept-filter>
+      <option value="all">Todos los conceptos con valor (${conceptsWithValue.length})</option>
+      ${conceptsWithValue.map(c =>
+        `<option value="${esc(c.key)}">${esc(c.label)}</option>`
+      ).join('')}
+    </select>
+  `;
+
   const exportBtn = document.createElement('button');
   exportBtn.className = 'btn btn--primary btn--sm';
   exportBtn.textContent = '⬇ Exportar .xlsx';
@@ -291,7 +389,7 @@ export function renderNrReporteResults(results, container) {
     exportBtn.disabled = true;
     exportBtn.textContent = 'Generando…';
     try {
-      await exportNrReporteToXlsx(results);
+      await exportNrReporteToXlsx(filteredResults);
     } catch (err) {
       showToast('Error al generar el archivo: ' + err.message, 'danger');
     } finally {
@@ -299,51 +397,75 @@ export function renderNrReporteResults(results, container) {
       exportBtn.textContent = '⬇ Exportar .xlsx';
     }
   });
+
+  toolbar.appendChild(filterGroup);
   toolbar.appendChild(exportBtn);
-
-  const tableWrap = document.createElement('div');
-  tableWrap.style.overflowX = 'auto';
-  tableWrap.innerHTML = `
-    <table class="data-table data-table--compact">
-      <thead>
-        <tr>
-          <th>ID_EMPLEADO</th>
-          <th>NOMBRE</th>
-          <th>APELLIDO_1</th>
-          <th>FECHA_ALTA</th>
-          <th>FECHA_BAJA</th>
-          <th>FEC_PAGO</th>
-          <th>ID_CENTRO_TRAB</th>
-          <th>ID_CATEGORIA</th>
-          ${NR_CONCEPTS.map(c => {
-            const bg = c.group === 'indem' ? INDEM_HDR : OTROS_HDR;
-            return `<th style="background:${bg};font-size:0.72em;white-space:nowrap;">${esc(c.label)}</th>`;
-          }).join('')}
-        </tr>
-      </thead>
-      <tbody>
-        ${rows.map(r => `
-          <tr>
-            <td>${fmtTxt(r.legajo)}</td>
-            <td>${fmtTxt(r.nombre)}</td>
-            <td>${fmtTxt(r.apellido1)}</td>
-            <td>${fmtTxt(r.fecAlta)}</td>
-            <td>${fmtTxt(r.fecBaja)}</td>
-            <td>${fmtTxt(r.fecPago)}</td>
-            <td>${fmtTxt(r.idCentroTrab)}</td>
-            <td>${fmtTxt(r.idCategoria)}</td>
-            ${NR_CONCEPTS.map(c =>
-              `<td style="text-align:right;">${fmt(r[c.key])}</td>`
-            ).join('')}
-          </tr>
-        `).join('')}
-      </tbody>
-    </table>
-  `;
-
-  container.innerHTML = '';
   container.appendChild(toolbar);
-  container.appendChild(tableWrap);
+
+  // ── Tabla (re-render al cambiar el filtro) ────────────────────────────────
+  const tableHost = document.createElement('div');
+  container.appendChild(tableHost);
+
+  function renderTable(selectedKey) {
+    const shownRows = selectedKey === 'all'
+      ? relevantRows
+      : relevantRows.filter(r => r[selectedKey] !== null && Math.abs(r[selectedKey]) > 0.01);
+
+    const shownConcepts = selectedKey === 'all'
+      ? conceptsWithValue
+      : NR_CONCEPTS.filter(c => c.key === selectedKey);
+
+    const hiddenCols = NR_CONCEPTS.length - shownConcepts.length;
+
+    tableHost.style.overflowX = 'auto';
+    tableHost.innerHTML = `
+      <table class="data-table data-table--compact">
+        <thead>
+          <tr>
+            <th>ID_EMPLEADO</th>
+            <th>NOMBRE</th>
+            <th>APELLIDO_1</th>
+            <th>FECHA_ALTA</th>
+            <th>FECHA_BAJA</th>
+            <th>FEC_PAGO</th>
+            <th>ID_CENTRO_TRAB</th>
+            <th>ID_CATEGORIA</th>
+            ${shownConcepts.map(c => {
+              const bg = c.group === 'indem' ? INDEM_HDR : OTROS_HDR;
+              return `<th style="background:${bg};font-size:0.72em;white-space:nowrap;">${esc(c.label)}</th>`;
+            }).join('')}
+          </tr>
+        </thead>
+        <tbody>
+          ${shownRows.map(r => `
+            <tr>
+              <td>${fmtTxt(r.legajo)}</td>
+              <td>${fmtTxt(r.nombre)}</td>
+              <td>${fmtTxt(r.apellido1)}</td>
+              <td>${fmtTxt(r.fecAlta)}</td>
+              <td>${fmtTxt(r.fecBaja)}</td>
+              <td>${fmtTxt(r.fecPago)}</td>
+              <td>${fmtTxt(r.idCentroTrab)}</td>
+              <td>${fmtTxt(r.idCategoria)}</td>
+              ${shownConcepts.map(c => {
+                const bg = c.group === 'indem' ? INDEM_BG : OTROS_BG;
+                return `<td style="text-align:right;background:${bg};">${fmtNum(r[c.key])}</td>`;
+              }).join('')}
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      <p class="text-muted" style="font-size:var(--text-sm);padding:var(--sp-2) var(--sp-3);">
+        Mostrando ${shownRows.length} empleado${shownRows.length === 1 ? '' : 's'}.
+        ${hiddenCols > 0 ? `Se ocultan ${hiddenCols} concepto${hiddenCols === 1 ? '' : 's'} sin valores.` : ''}
+        El .xlsx exportado incluye las 18 columnas de conceptos en el layout estándar.
+      </p>
+    `;
+  }
+
+  filterGroup.querySelector('[data-nr-concept-filter]')
+    .addEventListener('change', (e) => renderTable(e.target.value));
+  renderTable('all');
 }
 
 // ── Exports a Excel ───────────────────────────────────────────────────────────
