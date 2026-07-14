@@ -56,28 +56,29 @@ export function runNr(nrRows, tabRows, mapping) {
   const nm = mapping.nr;
   const tm = mapping.tab;
 
-  // Índice del Tabulado: legajo → { [conceptKey]: numericValue }
+  // Un legajo puede tener varias liquidaciones (pagas) en el mismo mes, tanto
+  // en el Tabulado como en el Reporte de NR (ej: mensual + baja). Meta4 informa
+  // el total sumado, así que consolidamos ambos lados por legajo antes de
+  // comparar — igual que en Brutos (ver groupRowsByLegajo/sumColumn).
+
+  // Índice del Tabulado: legajo → { [conceptKey]: total sumado entre pagas }
   const tabByLegajo = new Map();
-  for (const row of tabRows) {
-    const id = norm(row[tm.empleadoColumn]);
-    if (!id) continue;
+  for (const [id, group] of groupRowsByLegajo(tabRows, tm.empleadoColumn)) {
     const vals = {};
     for (const c of NR_CONCEPTS) {
-      const col = tm[c.tabKey];
-      vals[c.key] = col ? toNum(row[col]) : null;
+      vals[c.key] = sumColumn(group, tm[c.tabKey]);
     }
     tabByLegajo.set(id, vals);
   }
 
-  const rows = nrRows.map(row => {
-    const legajo  = norm(row[nm.legajoColumn]);
+  // Reporte de NR: una fila por legajo, sumando sus liquidaciones.
+  const rows = [...groupRowsByLegajo(nrRows, nm.legajoColumn).entries()].map(([legajo, group]) => {
     const tabVals = tabByLegajo.get(legajo) ?? null;
 
     const valores = {};
     for (const c of NR_CONCEPTS) {
-      const nrCol  = nm[c.nrKey];
-      const nrVal  = nrCol ? toNum(row[nrCol]) : null;
-      const tabVal = tabVals ? tabVals[c.key]  : null;
+      const nrVal  = sumColumn(group, nm[c.nrKey]);
+      const tabVal = tabVals ? tabVals[c.key] : null;
       const ctrl   = (tabVal !== null && nrVal !== null) ? tabVal - nrVal : null;
       valores[c.key] = { nrVal, tabVal, ctrl };
     }
@@ -95,6 +96,31 @@ export function runNr(nrRows, tabRows, mapping) {
     rows,
     period: mapping.period || '',
   };
+}
+
+// Agrupa filas por legajo, preservando el orden de aparición (de los legajos y
+// de las liquidaciones dentro de cada uno). Espeja groupTabRowsByLegajo de brutos.js.
+function groupRowsByLegajo(rows, legajoColumn) {
+  const groups = new Map();
+  for (const row of rows) {
+    const id = norm(row[legajoColumn]);
+    if (!id) continue;
+    if (!groups.has(id)) groups.set(id, []);
+    groups.get(id).push(row);
+  }
+  return groups;
+}
+
+// Suma un concepto a través de las liquidaciones de un legajo. Devuelve null si
+// la columna no está mapeada o ninguna liquidación tiene dato (distinto de 0).
+function sumColumn(group, col) {
+  if (!col) return null;
+  let total = null;
+  for (const row of group) {
+    const v = toNum(row[col]);
+    total = (total === null && v === null) ? null : (total ?? 0) + (v ?? 0);
+  }
+  return total;
 }
 
 // Un empleado es "relevante" si tiene algún valor NR (Tab o reporte) distinto de cero.
@@ -279,25 +305,26 @@ export function runNrReporte(_primaryRows, tabRows, mapping) {
   const nombreCol    = tm.tabNombreColumn    || null;
   const apellido1Col = tm.tabApellido1Column || null;
 
-  const rows = tabRows
-    .filter(row => !!norm(row[tm.empleadoColumn]))
-    .map(row => {
-      const base = {
-        legajo:       norm(row[tm.empleadoColumn]),
-        nombre:       nombreCol    ? norm(row[nombreCol])    : null,
-        apellido1:    apellido1Col ? norm(row[apellido1Col]) : null,
-        fecAlta:      tm.tabFecAltaColumn     ? fmtDate(row[tm.tabFecAltaColumn])     : null,
-        fecBaja:      tm.tabFecBajaColumn     ? fmtDate(row[tm.tabFecBajaColumn])     : null,
-        fecPago:      tm.tabFecPagoColumn     ? fmtDate(row[tm.tabFecPagoColumn])     : null,
-        idCentroTrab: tm.tabIdCentroTrabColumn ? norm(row[tm.tabIdCentroTrabColumn]) : null,
-        idCategoria:  tm.tabIdCategoriaColumn  ? norm(row[tm.tabIdCategoriaColumn])  : null,
-      };
-      for (const c of NR_CONCEPTS) {
-        const col = tm[c.tabKey];
-        base[c.key] = col ? toNum(row[col]) : null;
-      }
-      return base;
-    });
+  // Consolidar por legajo: los importes de cada concepto se suman entre todas
+  // las liquidaciones del mes; los datos de referencia (nombre, fechas) se
+  // toman de la última liquidación (igual que runBrutosReporte).
+  const rows = [...groupRowsByLegajo(tabRows, tm.empleadoColumn).entries()].map(([legajo, group]) => {
+    const last = group[group.length - 1];
+    const base = {
+      legajo,
+      nombre:       nombreCol    ? norm(last[nombreCol])    : null,
+      apellido1:    apellido1Col ? norm(last[apellido1Col]) : null,
+      fecAlta:      tm.tabFecAltaColumn     ? fmtDate(last[tm.tabFecAltaColumn])     : null,
+      fecBaja:      tm.tabFecBajaColumn     ? fmtDate(last[tm.tabFecBajaColumn])     : null,
+      fecPago:      tm.tabFecPagoColumn     ? fmtDate(last[tm.tabFecPagoColumn])     : null,
+      idCentroTrab: tm.tabIdCentroTrabColumn ? norm(last[tm.tabIdCentroTrabColumn]) : null,
+      idCategoria:  tm.tabIdCategoriaColumn  ? norm(last[tm.tabIdCategoriaColumn])  : null,
+    };
+    for (const c of NR_CONCEPTS) {
+      base[c.key] = sumColumn(group, tm[c.tabKey]);
+    }
+    return base;
+  });
 
   return {
     summary: { total: rows.length },
