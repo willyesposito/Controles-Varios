@@ -97,6 +97,14 @@ export function runNr(nrRows, tabRows, mapping) {
   };
 }
 
+// Un empleado es "relevante" si tiene algún valor NR (Tab o reporte) distinto de cero.
+// Filtra el ruido de legajos que no cobran ningún concepto no remunerativo.
+function hasAnyNrValue(r) {
+  return Object.values(r.valores).some(v =>
+    (v.nrVal !== null && Math.abs(v.nrVal) > 0.01) || (v.tabVal !== null && Math.abs(v.tabVal) > 0.01)
+  );
+}
+
 export function renderNrResults(results, container) {
   const { rows } = results;
 
@@ -105,11 +113,41 @@ export function renderNrResults(results, container) {
     return;
   }
 
+  const isDif = v => v !== null && Math.abs(v) > 0.01;
+
+  const relevantRows = rows.filter(hasAnyNrValue);
+  const filteredResults = { ...results, rows: relevantRows };
+
+  if (relevantRows.length === 0) {
+    container.innerHTML = `<p class="text-muted" style="padding:var(--sp-4);">Ningún empleado tiene valores NR distintos de cero en este período.</p>`;
+    return;
+  }
+
   const fmt = v => v === null
     ? '—'
     : v.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  const isDif = v => v !== null && Math.abs(v) > 0.01;
+  // Hero: cuántos empleados (de los que tienen algún valor NR) están bien vs con diferencia
+  const diffCount = relevantRows.filter(r => NR_CONCEPTS.some(c => isDif(r.valores[c.key].ctrl))).length;
+  const okCount   = relevantRows.length - diffCount;
+  const hiddenCount = rows.length - relevantRows.length;
+
+  const hero = document.createElement('div');
+  hero.style.cssText = 'display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-5);padding:var(--sp-3) var(--sp-4);margin:var(--sp-3) var(--sp-3) 0;background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);';
+  hero.innerHTML = `
+    <div style="display:flex;align-items:baseline;gap:8px;">
+      <span style="font-size:1.8em;font-weight:700;color:var(--color-success);">${okCount}</span>
+      <span style="font-size:var(--text-sm);color:var(--color-text-muted);">bien</span>
+    </div>
+    <div style="display:flex;align-items:baseline;gap:8px;">
+      <span style="font-size:1.8em;font-weight:700;color:${diffCount > 0 ? 'var(--color-danger)' : 'var(--color-text-muted)'};">${diffCount}</span>
+      <span style="font-size:var(--text-sm);color:var(--color-text-muted);">con diferencia</span>
+    </div>
+    <div style="margin-left:auto;font-size:var(--text-sm);color:var(--color-text-muted);text-align:right;">
+      ${relevantRows.length} empleados con algún valor NR
+      ${hiddenCount > 0 ? `<br>${hiddenCount} sin valores NR (no se muestran)` : ''}
+    </div>
+  `;
 
   // Botón exportar
   const toolbar = document.createElement('div');
@@ -121,7 +159,7 @@ export function renderNrResults(results, container) {
     exportBtn.disabled = true;
     exportBtn.textContent = 'Generando…';
     try {
-      await exportNrToXlsx(results);
+      await exportNrToXlsx(filteredResults);
     } catch (err) {
       showToast('Error al generar el archivo: ' + err.message, 'danger');
     } finally {
@@ -140,6 +178,7 @@ export function renderNrResults(results, container) {
   const cellBg = c => c.group === 'indem' ? INDEM_BG : OTROS_BG;
 
   // Tabla resumen HTML: Legajo + # difs + conceptos con diferencia
+  // Sólo empleados con algún valor NR (ver hasAnyNrValue) — el resto no aporta nada al control.
   const tableWrap = document.createElement('div');
   tableWrap.style.overflowX = 'auto';
   tableWrap.innerHTML = `
@@ -155,7 +194,7 @@ export function renderNrResults(results, container) {
         </tr>
       </thead>
       <tbody>
-        ${rows.map(r => {
+        ${relevantRows.map(r => {
           const difs = NR_CONCEPTS.filter(c => isDif(r.valores[c.key].ctrl)).length;
           const rowStyle = difs > 0 ? '' : '';
           return `
@@ -180,6 +219,7 @@ export function renderNrResults(results, container) {
   `;
 
   container.innerHTML = '';
+  container.appendChild(hero);
   container.appendChild(toolbar);
   container.appendChild(tableWrap);
 }
