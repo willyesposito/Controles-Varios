@@ -221,8 +221,8 @@ export const CONTROL_REGISTRY = {
       + 'sin necesitar el archivo de M4.',
     help: {
       what: 'Genera el archivo de NR directamente desde el Tabulado con los 18 conceptos '
-        + 'no remunerativos. Todos los conceptos son obligatorios y deben estar mapeados '
-        + 'para asegurar que queden todos incluidos en el reporte.',
+        + 'no remunerativos. Ningún concepto es obligatorio: el que no tenga columna '
+        + 'asignada queda vacío en el reporte.',
       how: [
         'En el panel de configuración del Paso 2 indicá las columnas del Tabulado para cada uno de los 18 conceptos.',
         'Ejecutá.',

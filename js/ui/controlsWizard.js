@@ -291,15 +291,6 @@ function canGoNext(state) {
       if (hasGsPers) {
         if (!cfg.tabGtosPersonalesColumn || !cfg.tabDtoCocheraColumn) return false;
       }
-      const hasNr = state.selectedControls.some(id => NR_IDS.includes(id));
-      if (hasNr) {
-        const nrRequired = [
-          ...TAB_NR_EXTRA_FIELDS,
-          ...TAB_NR_INDEM_FIELDS,
-          ...TAB_NR_OTROS_FIELDS,
-        ].map(f => f.key);
-        if (nrRequired.some(k => !cfg[k])) return false;
-      }
       return true;
     }
 
@@ -792,33 +783,28 @@ const TAB_GS_PERS_FIELDS = [
   { key: 'tabDtoCocheraColumn',     label: 'DTO_COCHERA — columna en Tabulado',      required: true },
 ];
 
-const TAB_NR_EXTRA_FIELDS = [
-  { key: 'tabIdCentroTrabColumn', label: 'ID_CENTRO_TRAB — columna en Tabulado', required: true },
-  { key: 'tabIdCategoriaColumn',  label: 'ID_CATEGORIA — columna en Tabulado',   required: true },
-];
-
 const TAB_NR_INDEM_FIELDS = [
-  { key: 'tabIndemPreavisoColumn',  label: 'INDEM_PREAVISO — columna en Tabulado',  required: true },
-  { key: 'tabSacPreavisoColumn',    label: 'SAC_PREAVISO — columna en Tabulado',    required: true },
-  { key: 'tabIndemAntDespColumn',   label: 'INDEM_ANT_DESP — columna en Tabulado',  required: true },
-  { key: 'tabIndemAntFalleColumn',  label: 'INDEM_ANT_FALLE — columna en Tabulado', required: true },
-  { key: 'tabIndemIntegColumn',     label: 'INDEM_INTEG — columna en Tabulado',     required: true },
-  { key: 'tabSacIndemIntegColumn',  label: 'SAC_INDEM_INTEG — columna en Tabulado', required: true },
-  { key: 'tabIndmMaternidadColumn', label: 'INDM_MATERNIDAD — columna en Tabulado', required: true },
-  { key: 'tabVacNoGozadasColumn',   label: 'VAC_NO_GOZADAS — columna en Tabulado',  required: true },
-  { key: 'tabVacNoGozSacColumn',    label: 'VAC_NO_GOZ_SAC — columna en Tabulado',  required: true },
-  { key: 'tabGratVacColumn',        label: 'GRAT_VAC — columna en Tabulado',        required: true },
-  { key: 'tabGraVacnogSacColumn',   label: 'GRA_VACNOG_SAC — columna en Tabulado',  required: true },
-  { key: 'tabIndemFuerMayColumn',   label: 'INDEM_FUER_MAY — columna en Tabulado',  required: true },
-  { key: 'tabIndemEmbarazoColumn',  label: 'INDEM_EMBARAZO — columna en Tabulado',  required: true },
+  { key: 'tabIndemPreavisoColumn',  label: 'INDEM_PREAVISO — columna en Tabulado',  required: false },
+  { key: 'tabSacPreavisoColumn',    label: 'SAC_PREAVISO — columna en Tabulado',    required: false },
+  { key: 'tabIndemAntDespColumn',   label: 'INDEM_ANT_DESP — columna en Tabulado',  required: false },
+  { key: 'tabIndemAntFalleColumn',  label: 'INDEM_ANT_FALLE — columna en Tabulado', required: false },
+  { key: 'tabIndemIntegColumn',     label: 'INDEM_INTEG — columna en Tabulado',     required: false },
+  { key: 'tabSacIndemIntegColumn',  label: 'SAC_INDEM_INTEG — columna en Tabulado', required: false },
+  { key: 'tabIndmMaternidadColumn', label: 'INDM_MATERNIDAD — columna en Tabulado', required: false },
+  { key: 'tabVacNoGozadasColumn',   label: 'VAC_NO_GOZADAS — columna en Tabulado',  required: false },
+  { key: 'tabVacNoGozSacColumn',    label: 'VAC_NO_GOZ_SAC — columna en Tabulado',  required: false },
+  { key: 'tabGratVacColumn',        label: 'GRAT_VAC — columna en Tabulado',        required: false },
+  { key: 'tabGraVacnogSacColumn',   label: 'GRA_VACNOG_SAC — columna en Tabulado',  required: false },
+  { key: 'tabIndemFuerMayColumn',   label: 'INDEM_FUER_MAY — columna en Tabulado',  required: false },
+  { key: 'tabIndemEmbarazoColumn',  label: 'INDEM_EMBARAZO — columna en Tabulado',  required: false },
 ];
 
 const TAB_NR_OTROS_FIELDS = [
-  { key: 'tabReinHomeOficeColumn',  label: 'REIN_HOME_OFICE — columna en Tabulado', required: true },
-  { key: 'tabGratExtraordColumn',   label: 'GRAT_EXTRAORD — columna en Tabulado',   required: true },
-  { key: 'tabAsigPasColumn',        label: 'ASIG_PAS — columna en Tabulado',        required: true },
-  { key: 'tabReintGuardColumn',     label: 'REINT_GUARD — columna en Tabulado',     required: true },
-  { key: 'tabIncrementoStColumn',   label: 'INCREMENTO_ST — columna en Tabulado',   required: true },
+  { key: 'tabReinHomeOficeColumn',  label: 'REIN_HOME_OFICE — columna en Tabulado', required: false },
+  { key: 'tabGratExtraordColumn',   label: 'GRAT_EXTRAORD — columna en Tabulado',   required: false },
+  { key: 'tabAsigPasColumn',        label: 'ASIG_PAS — columna en Tabulado',        required: false },
+  { key: 'tabReintGuardColumn',     label: 'REINT_GUARD — columna en Tabulado',     required: false },
+  { key: 'tabIncrementoStColumn',   label: 'INCREMENTO_ST — columna en Tabulado',   required: false },
 ];
 
 // Mapa CODIGO del catálogo → clave del tabExtraConfig (con prefijo "tab")
@@ -897,7 +883,6 @@ function renderTabExtraConfig(container, state, root, { hasBrutos, hasGsPers, ha
     ...(hasBrutos ? TAB_BRUTOS_FIELDS  : []),
     ...(hasGsPers ? TAB_GS_PERS_FIELDS : []),
     ...(hasNr ? [
-      ...TAB_NR_EXTRA_FIELDS,
       { groupHeader: 'Indemnizatorios' },
       ...TAB_NR_INDEM_FIELDS,
       { groupHeader: 'Otros NR' },
