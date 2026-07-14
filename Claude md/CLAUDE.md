@@ -204,4 +204,28 @@ Estos archivos se actualizan a medida que el proyecto evoluciona. Claude Code pu
 
 ---
 
-**Última actualización:** 18 de mayo de 2026 — versión inicial del proyecto.
+## 11. Pendientes anotados por Willy (sesión 2026-07-14)
+
+Ideas validadas por Willy, todavía sin implementar salvo donde se indica:
+
+1. **Ocultar filas/columnas sin datos reales — generalizar a todos los controles.**
+   El drilldown de Rendimiento vs Asiento (`buildDrillRollup` en `js/controls/rendVsAsiento.js`) arma sus
+   tablas a partir del detalle real de asientos: sólo aparecen conceptos y empleados con movimiento, nunca
+   filas vacías de un catálogo fijo. Aplicar ese mismo criterio ("mostrar solo lo que tiene valor real") al
+   resto de los controles, que hoy listan filas fijas aunque estén todas en cero. Primer paso ya hecho en
+   Control NR (`hasAnyNrValue` en `js/controls/nr.js` → `renderNrResults`): filtra legajos sin ningún valor
+   NR antes de armar la tabla.
+
+2. **Hero de "empleados bien vs con diferencia" en cada control.**
+   Piloteado en Control NR (`renderNrResults`, `js/controls/nr.js`): tarjeta simple arriba de la tabla con
+   el conteo de empleados sin diferencias vs con diferencias. Falta reproducir el patrón (adaptado a la
+   forma de cada control) en:
+   - `gsPers.js` (`renderGsPersResults`) — hoy no tiene ningún resumen arriba de la tabla.
+   - `rendVsTabu.js` (`renderRendVsTabuResults`) — ídem.
+   - `rendVsAsiento.js` (`renderRendVsAsientoResults`) — es una grilla CC × categoría, requiere más adaptación.
+   - Brutos, EE x CATEG y Rendimiento x EE **ya tienen** algo equivalente (`chipEl` en `brutos.js`/`rendXEe.js`,
+     `buildDiffChip` en `catXEmpleados.js`) — usarlos de referencia de estilo.
+
+---
+
+**Última actualización:** 14 de julio de 2026 — pendientes de UI/UX anotados (ver sección 11).

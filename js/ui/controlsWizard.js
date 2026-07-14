@@ -107,8 +107,8 @@ export async function renderControlsWizard(root, clientId) {
     client,
     tab:              cachedTab,
     catalog:          savedCatalog || null,  // { rows, fileName, parseMetadata } | null
-    selectedControls: ['cat_x_empleados'],
-    controlFiles:     { cat_x_empleados: {} },
+    selectedControls: [],
+    controlFiles:     {},
     period:           currentPeriod(),
     notes:            '',
     // tabExtraConfig: columnas adicionales del Tabulado para Brutos y GS Pers
