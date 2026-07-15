@@ -15,11 +15,13 @@ import {
   saveFileProfile,
   getClientCatalog,
   saveClientCatalog,
+  getConfig,
 } from '../db.js';
 import { CATALOGO_SEED } from '../data/catalogoSeed.js';
 import { initFileUploadStep, matchLevel, matchSelectStyle, matchBadge } from './fileUpload.js';
 import { renderTabuladoAnalysis } from './tabuladoAnalysis.js';
 import { CONTROL_REGISTRY }        from '../controls/registry.js';
+import { computeSemaforoStatus, DEFAULT_SEMAFORO_THRESHOLD_PCT } from '../controls/semaforo.js';
 import { autoDetectTabMapping }    from '../parsers/tabuladoControl.js';
 import { autoDetectCatMapping }    from '../parsers/catEmpleados.js';
 import { autoDetectBrutosMapping } from '../parsers/brutosParser.js';
@@ -1096,15 +1098,24 @@ function renderInlineResults(container, state, root) {
 
   const resultsContainer = container.querySelector('#js-inline-results');
 
-  for (const controlId of state.selectedControls) {
+  // Cascada A1: errores primero (orden calculado al ejecutar, ver executeControls),
+  // stagger capado a 6 tarjetas — de la 7ma en adelante entran todas juntas.
+  const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const order = state.lastRunTierOrder?.length ? state.lastRunTierOrder : state.selectedControls;
+
+  order.forEach((controlId, i) => {
     const ctrl = CONTROL_REGISTRY[controlId];
-    if (!ctrl || !state.lastRunResults[controlId]) continue;
+    if (!ctrl || !state.lastRunResults[controlId]) return;
 
     const wrapper = document.createElement('div');
     wrapper.style.marginBottom = 'var(--sp-5)';
+    if (!reduceMotion) {
+      wrapper.classList.add('anim-card-in');
+      wrapper.style.animationDelay = `${Math.min(i, 5) * 0.13}s`;
+    }
     resultsContainer.appendChild(wrapper);
     ctrl.renderResults(state.lastRunResults[controlId], wrapper);
-  }
+  });
 
   container.querySelector('#js-rerun-btn').addEventListener('click', () => {
     state.lastRunResults = null;
@@ -1172,18 +1183,72 @@ function renderStatusBanner(bannerEl, state) {
 
 // ── Ejecución ─────────────────────────────────────────────────────────────────
 
+// A1 — Procesamiento de la corrida: barra de progreso + checklist de 3 pasos
+// atados a hitos reales del pipeline (lectura → cruce → umbrales), no a un
+// timer fake. Ver design_handoff_rediseno_controles/README.md §Animaciones.
+const EXEC_BAR_WIDTHS = ['6%', '38%', '70%', '100%'];
+const EXEC_TIER_RANK  = { error: 0, warn: 1, ok: 2, info: 3 };
+
 async function executeControls(state, statusEl, container, root) {
-  statusEl.innerHTML = `
-    <div class="loading-screen">
-      <div class="spinner"></div>
-      <p class="text-muted">Ejecutando controles…</p>
-    </div>
-  `;
+  const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const wait = ms => (reduceMotion ? Promise.resolve() : new Promise(r => setTimeout(r, ms)));
+
+  const quickRun = state.quickRun === true;
+  const tab = state.tab;
+  const nCtrl = state.selectedControls.length;
+  const totalLegajos = tab?.parseMetadata?.totalRows ?? null;
+
+  const uniqueFileNames = [...new Set([tab?.fileName, ...state.selectedControls.flatMap(id => {
+    const ctrl = CONTROL_REGISTRY[id];
+    return ctrl ? ctrl.additionalFiles.map(f => state.controlFiles[id]?.[f.key]?.fileName) : [];
+  })].filter(Boolean))];
+
+  // thresholdPct sólo afecta el texto del paso 3 — se completa después de la
+  // primera pintura para que la barra aparezca al instante del clic (sin await antes).
+  let thresholdPct = DEFAULT_SEMAFORO_THRESHOLD_PCT;
+
+  const execSteps = [
+    {
+      label: `Leyendo ${uniqueFileNames.length} archivo${uniqueFileNames.length === 1 ? '' : 's'} Excel`,
+      note: uniqueFileNames.join(' · ') || '—',
+    },
+    {
+      label: totalLegajos ? `Cruzando ${totalLegajos.toLocaleString('es-AR')} legajos` : 'Cruzando legajos',
+      note: `${nCtrl} control${nCtrl === 1 ? '' : 'es'}`,
+    },
+    {
+      label: 'Aplicando umbrales y semáforos',
+      get note() { return `verde 0% · amarillo ≤${thresholdPct}% · rojo >${thresholdPct}%`; },
+    },
+  ];
+
+  let stepsDone = 0; // cantidad de pasos del checklist ya completados (0..3)
+
+  function renderProgress() {
+    statusEl.innerHTML = `
+      <div class="exec-progress"><div class="exec-progress__fill" style="width:${EXEC_BAR_WIDTHS[stepsDone]};"></div></div>
+      <div class="exec-steps">
+        ${execSteps.map((s, i) => {
+          const done   = stepsDone > i;
+          const active = stepsDone === i;
+          return `
+            <div class="exec-step">
+              <span class="exec-step__dot ${done ? 'exec-step__dot--done' : active ? 'exec-step__dot--active' : ''}">${done ? '✓' : ''}</span>
+              <span class="exec-step__label ${done || active ? 'exec-step__label--done' : ''}">${esc(s.label)}</span>
+              <span class="exec-step__note">${esc(s.note)}</span>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+  }
+
+  renderProgress();
 
   try {
-    const quickRun = state.quickRun === true;
-    const tab = state.tab;
+    thresholdPct = (await getConfig('semaforoThresholdPct')) ?? DEFAULT_SEMAFORO_THRESHOLD_PCT;
 
+    // ── Paso 1 · Leyendo archivos ────────────────────────────────────────────
     // Las preferencias del usuario (mapeos de columnas) se guardan siempre,
     // sean borrador o quick — son configuración que el usuario reusa.
     const needsTabExtra = state.selectedControls.some(id =>
@@ -1210,16 +1275,9 @@ async function executeControls(state, statusEl, container, root) {
           runId, 'tab_control', tab.fileName, tab.parsedRows, tab.parseMetadata, tab.mapping
         );
       }
-    }
-
-    // Por cada control: guardar archivos adicionales (si !quickRun) y ejecutar lógica
-    const runResults = {};
-
-    for (const controlId of state.selectedControls) {
-      const ctrl = CONTROL_REGISTRY[controlId];
-      if (!ctrl) continue;
-
-      if (!quickRun) {
+      for (const controlId of state.selectedControls) {
+        const ctrl = CONTROL_REGISTRY[controlId];
+        if (!ctrl) continue;
         for (const fileSpec of ctrl.additionalFiles) {
           const fileData = state.controlFiles[controlId]?.[fileSpec.key];
           if (fileData) {
@@ -1230,6 +1288,16 @@ async function executeControls(state, statusEl, container, root) {
           }
         }
       }
+    }
+
+    stepsDone = 1; renderProgress(); await wait(220);
+
+    // ── Paso 2 · Cruzando legajos ────────────────────────────────────────────
+    const runResults = {};
+
+    for (const controlId of state.selectedControls) {
+      const ctrl = CONTROL_REGISTRY[controlId];
+      if (!ctrl) continue;
 
       const mapping = {
         tab:    { ...(tab?.mapping || {}), ...state.tabExtraConfig },
@@ -1253,18 +1321,44 @@ async function executeControls(state, statusEl, container, root) {
       const primaryKey  = ctrl.additionalFiles[0]?.key;
       const primaryRows = state.controlFiles[controlId]?.[primaryKey]?.parsedRows || [];
 
-      const results = ctrl.run(primaryRows, tabRows, mapping);
-      runResults[controlId] = results;
-
-      if (!quickRun) await saveControlRunResults(runId, controlId, results);
+      runResults[controlId] = ctrl.run(primaryRows, tabRows, mapping);
     }
 
-    // 5. Mostrar resultados inline (sin navegar a otra página).
+    stepsDone = 2; renderProgress(); await wait(220);
+
+    // ── Paso 3 · Aplicando umbrales y semáforos ──────────────────────────────
+    // Calcula el tier (error/warn/ok) de cada control para ordenar la cascada
+    // de tarjetas errores-primero (ver renderInlineResults) y persiste resultados.
+    const tierOrder = state.selectedControls
+      .map(controlId => {
+        const ctrl = CONTROL_REGISTRY[controlId];
+        const summary = ctrl?.summarize ? ctrl.summarize(runResults[controlId]) : null;
+        const tier = !summary ? 'info'
+          : summary.status === 'error' ? 'error'
+          : summary.unitsTotal == null ? 'info'
+          : computeSemaforoStatus(summary.unitsWithDiff, summary.unitsTotal, thresholdPct);
+        return { controlId, tier };
+      })
+      .sort((a, b) => EXEC_TIER_RANK[a.tier] - EXEC_TIER_RANK[b.tier])
+      .map(t => t.controlId);
+
+    if (!quickRun) {
+      for (const controlId of state.selectedControls) {
+        if (runResults[controlId] !== undefined) {
+          await saveControlRunResults(runId, controlId, runResults[controlId]);
+        }
+      }
+    }
+
+    stepsDone = 3; renderProgress(); await wait(180);
+
+    // Mostrar resultados inline (sin navegar a otra página), cascada errores-primero.
     // Si fue quickRun, lastRunId queda null y el banner indica que no se guardó.
     // Si fue saved, arranca como borrador (isDefinitive=false) y el banner deja promoverlo.
     state.lastRunId            = runId;
     state.lastRunResults       = runResults;
     state.lastRunIsDefinitive  = false;
+    state.lastRunTierOrder     = tierOrder;
     renderInlineResults(container, state, root);
     renderWizardNav(root, state);
 

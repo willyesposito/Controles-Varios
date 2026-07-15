@@ -245,15 +245,17 @@
 .control-card--tier-error { border-left-color: var(--error); }
 .control-card--tier-info  { border-left-color: var(--neutral); }
 
-.control-card > details > summary {
+.control-card > .control-card__summary {
   cursor: pointer;
-  list-style: none;
   padding: var(--sp-4) var(--sp-5);
   user-select: none;
   transition: background var(--transition);
 }
-.control-card > details > summary::-webkit-details-marker { display: none; }
-.control-card > details > summary:hover { background: var(--color-bg-subtle); }
+.control-card > .control-card__summary:hover { background: var(--color-bg-subtle); }
+.control-card > .control-card__summary:focus-visible {
+  outline: 3px solid var(--color-primary);
+  outline-offset: -3px;
+}
 
 .control-card__row {
   display: flex;
@@ -291,17 +293,6 @@
   border: 1px solid var(--color-primary);
   border-radius: var(--radius-full);
   margin-left: auto;
-}
-.control-card__expand-icon {
-  font-size: 10px;
-  transition: transform 0.15s;
-  display: inline-block;
-}
-.control-card > details[open] > summary .control-card__expand-icon {
-  transform: rotate(90deg);
-}
-.control-card > details[open] > summary .control-card__expand-text::after {
-  content: '';
 }
 
 .control-card__insights {
@@ -865,7 +856,8 @@
   stroke-linecap: round;
   transform: rotate(-90deg);
   transform-origin: center;
-  transition: stroke-dasharray 0.6s cubic-bezier(.4,0,.2,1);
+  /* A2: el arco se anima cuadro a cuadro por rAF (js/ui/controlsResults.js),
+     sincronizado con el número — sin transition CSS para no duplicar el easing. */
 }
 .hero-gauge__ring-fill--ok    { stroke: var(--ok); }
 .hero-gauge__ring-fill--warn  { stroke: var(--warn); }
@@ -1070,6 +1062,68 @@
   .wizard-onepane { grid-template-columns: 1fr; margin: 0; }
   .wizard-onepane__files { border-right: none; padding: 0; margin-bottom: var(--sp-5); }
   .wizard-onepane__side { padding: 0; }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   Animaciones del rediseño (A1–A4) — ver
+   design_handoff_rediseno_controles/README.md §Animaciones.
+   Easing único cubic-bezier(.4,0,.2,1), sin bounces.
+   ══════════════════════════════════════════════════════════════ */
+@keyframes cardIn { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes pulseOk { 0% { box-shadow: 0 0 0 0 rgba(34,197,94,.45); } 100% { box-shadow: 0 0 0 14px rgba(34,197,94,0); } }
+@keyframes pulseCeleste { 0% { box-shadow: 0 0 0 0 rgba(0,172,212,.45); } 100% { box-shadow: 0 0 0 12px rgba(0,172,212,0); } }
+
+.anim-card-in { animation: cardIn 0.45s cubic-bezier(.4,0,.2,1) both; }
+
+/* A1 — Procesamiento de la corrida (controlsWizard.js → executeControls) */
+.exec-progress {
+  width: 100%; max-width: 560px; margin: 0 auto var(--sp-5);
+  height: 6px; border-radius: 9999px; background: var(--line-soft); overflow: hidden;
+}
+.exec-progress__fill {
+  height: 100%; border-radius: 9999px; background: var(--celeste);
+  transition: width 0.8s cubic-bezier(.4,0,.2,1);
+}
+.exec-steps {
+  display: flex; flex-direction: column;
+  width: 100%; max-width: 560px; margin: 0 auto; font-family: var(--font-tool);
+}
+.exec-step { display: flex; align-items: center; gap: var(--sp-3); padding: 9px 0; }
+.exec-step__dot {
+  width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; color: #fff; background: var(--line);
+  transition: background var(--transition);
+}
+.exec-step__dot--active { background: var(--celeste); animation: pulseCeleste 1.1s cubic-bezier(.4,0,.2,1) infinite; }
+.exec-step__dot--done   { background: var(--ok); }
+.exec-step__label { font-size: 13px; font-weight: 600; color: var(--t3); flex: 1; transition: color var(--transition); }
+.exec-step__label--done { color: var(--t1); }
+.exec-step__note { font-size: 12px; color: var(--t3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* A3 — Fila de diferencias expandible (controlsResults.js): grid 0fr⇄1fr,
+   nunca se mide la altura en JS. */
+.ctrl-detail-grid {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.28s cubic-bezier(.4,0,.2,1);
+}
+.ctrl-detail-grid.is-open { grid-template-rows: 1fr; }
+.ctrl-detail-grid__inner { overflow: hidden; min-height: 0; }
+
+/* A4 — Pulso al mejorar el estado de un control entre corridas */
+.status-dot--pulse-ok { animation: pulseOk 0.9s ease-out 3; }
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-card-in,
+  .hero-ctrl-row,
+  .status-dot,
+  .exec-step__dot,
+  .ctrl-detail-grid,
+  .exec-progress__fill {
+    animation: none !important;
+    transition: none !important;
+  }
 }
 
 /* ── Responsive básico ───────────────────────────────────────── */
