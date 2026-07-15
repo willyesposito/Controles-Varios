@@ -119,11 +119,14 @@ export async function renderControlsResults(root, runId) {
   for (const item of controlSummaries) {
     const { row, ctrl, summary, tier } = item;
 
-    const diffLabel = summary.unitsWithDiff > 0
-      ? `Ver las ${fmtInt(summary.unitsWithDiff)} diferencias`
-      : 'Ver detalle';
+    const nDiff = summary.unitsWithDiff || 0;
+    const diffLabel = nDiff > 1  ? `Ver las ${fmtInt(nDiff)} diferencias`
+                    : nDiff === 1 ? 'Ver la diferencia'
+                    : 'Ver detalle';
     const diffLabelClosed = `${diffLabel} ▾`;
-    const diffLabelOpen = summary.unitsWithDiff > 0 ? 'Ocultar diferencias ▴' : 'Ocultar detalle ▴';
+    const diffLabelOpen = nDiff > 1  ? 'Ocultar diferencias ▴'
+                        : nDiff === 1 ? 'Ocultar la diferencia ▴'
+                        : 'Ocultar detalle ▴';
 
     const card = document.createElement('div');
     card.className = `control-card control-card--tier-${tier}`;
@@ -277,15 +280,16 @@ function buildHeroHtml(controlSummaries, runFiles, thresholdPct, prevTierByContr
   const ringClass = overallTier === 'error' ? 'hero-gauge__ring-fill--error'
                   : overallTier === 'warn'  ? 'hero-gauge__ring-fill--warn'
                   : 'hero-gauge__ring-fill--ok';
-  // Con reduced-motion se dibuja directo en el valor final; si no, arranca en 0
-  // y animateHeroGauge lo lleva al valor real cuadro a cuadro.
-  const initialFillLen = reduceMotion ? (pctOk / 100) * GAUGE_CIRC : 0;
+  // Renderizamos SIEMPRE el valor final: así el gauge muestra el número correcto
+  // aunque la animación no llegue a correr (pestaña en segundo plano, JS lento,
+  // reduced-motion). animateHeroGauge, si puede animar, resetea a 0 y sube.
+  const finalFillLen = (pctOk / 100) * GAUGE_CIRC;
 
   const gaugeSvg = `
     <svg width="190" height="190" viewBox="0 0 190 190">
       <circle class="hero-gauge__ring-bg" cx="95" cy="95" r="${GAUGE_R}"></circle>
       <circle class="hero-gauge__ring-fill ${ringClass}" data-gauge-fill cx="95" cy="95" r="${GAUGE_R}"
-        stroke-dasharray="${initialFillLen.toFixed(1)} ${GAUGE_CIRC.toFixed(1)}"></circle>
+        stroke-dasharray="${finalFillLen.toFixed(1)} ${GAUGE_CIRC.toFixed(1)}"></circle>
     </svg>
   `;
 
@@ -323,7 +327,7 @@ function buildHeroHtml(controlSummaries, runFiles, thresholdPct, prevTierByContr
         <div class="hero-gauge">
           ${gaugeSvg}
           <div class="hero-gauge__center">
-            <span class="hero-gauge__pct" data-gauge-pct>${reduceMotion ? fmtPct1(pctOk) : '0,0'}%</span>
+            <span class="hero-gauge__pct" data-gauge-pct>${fmtPct1(pctOk)}%</span>
             <span class="hero-gauge__label">legajos OK</span>
           </div>
         </div>
@@ -429,10 +433,12 @@ function buildCtrlRowHtml(item, index, prevTierByControlId, reduceMotion) {
 }
 
 // ── A2 — Entrada del veredicto: arco + número avanzan juntos vía rAF ────────
-// Corre una sola vez por montaje del hero (también al abrir un run guardado).
-// Con prefers-reduced-motion, buildHeroHtml ya dibujó el valor final: no-op.
+// El hero ya renderiza el valor final (ver buildHeroHtml). Si podemos animar,
+// reseteamos a 0 y subimos hasta ese valor cuadro a cuadro. Si no (reduced-motion
+// o pestaña en segundo plano, donde rAF no dispara), lo dejamos en el valor final.
 function animateHeroGauge(heroEl, pctOk, overallTier) {
   if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+  if (document.hidden) return; // rAF no corre en pestañas ocultas: dejamos el valor final ya dibujado
 
   const fillEl = heroEl.querySelector('[data-gauge-fill]');
   const pctEl  = heroEl.querySelector('[data-gauge-pct]');
@@ -449,6 +455,10 @@ function animateHeroGauge(heroEl, pctOk, overallTier) {
     pctEl.textContent = `${fmtPct1(current)}%`;
     if (p < 1) requestAnimationFrame(tick);
   }
+
+  // Arrancamos desde 0 (el valor final ya está en el DOM como fallback seguro).
+  fillEl.setAttribute('stroke-dasharray', `0.0 ${GAUGE_CIRC.toFixed(1)}`);
+  pctEl.textContent = '0,0%';
   requestAnimationFrame(tick);
 }
 
