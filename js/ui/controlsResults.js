@@ -4,7 +4,7 @@
 // ordenada errores-primero) que responde "¿está bien?" de un vistazo.
 // Abajo: las tarjetas de detalle existentes, una por control, colapsadas.
 
-import { getControlRun, updateControlRun, getClient, getControlRunResults, getControlRunFiles, getConfig } from '../db.js';
+import { getControlRun, updateControlRun, getClient, getControlRunResults, getControlRunFiles, getControlRuns, getConfig } from '../db.js';
 import { CONTROL_REGISTRY } from '../controls/registry.js';
 import { computeSemaforoStatus, DEFAULT_SEMAFORO_THRESHOLD_PCT } from '../controls/semaforo.js';
 import { periodToLabel }    from '../utils/dates.js';
@@ -106,44 +106,61 @@ export async function renderControlsResults(root, runId) {
     .filter(Boolean)
     .sort((a, b) => TIER_RANK[a.tier] - TIER_RANK[b.tier]);
 
-  heroEl.innerHTML = buildHeroHtml(controlSummaries, runFiles, thresholdPct);
+  // A4 — tier de cada control en la corrida inmediatamente anterior (mismo
+  // cliente/período), para detectar mejoras (rojo→amarillo/verde) y aplicar
+  // el pulso de "esto se arregló". Sin corrida previa, no hay pulso.
+  const prevTierByControlId = await getPrevTierByControlId(run, thresholdPct);
+
+  const { html: heroHtml, pctOk, overallTier } = buildHeroHtml(controlSummaries, runFiles, thresholdPct, prevTierByControlId);
+  heroEl.innerHTML = heroHtml;
+  animateHeroGauge(heroEl, pctOk, overallTier);
 
   // Una tarjeta colapsable por control (mismo orden que el hero: errores primero)
   for (const item of controlSummaries) {
     const { row, ctrl, summary, tier } = item;
 
+    const diffLabel = summary.unitsWithDiff > 0
+      ? `Ver las ${fmtInt(summary.unitsWithDiff)} diferencias`
+      : 'Ver detalle';
+    const diffLabelClosed = `${diffLabel} ▾`;
+    const diffLabelOpen = summary.unitsWithDiff > 0 ? 'Ocultar diferencias ▴' : 'Ocultar detalle ▴';
+
     const card = document.createElement('div');
     card.className = `control-card control-card--tier-${tier}`;
     card.dataset.controlId = row.controlId;
     card.innerHTML = `
-      <details>
-        <summary class="control-card__summary">
-          <div class="control-card__row">
-            <span class="status-dot status-dot--${TIER_DOT[tier]}" aria-hidden="true"></span>
-            <h3 class="control-card__name">${esc(ctrl.label)}</h3>
-            <span class="control-card__headline">${esc(summary.headline)}</span>
-            <span class="control-card__expand">
-              <span class="control-card__expand-icon">▶</span>
-              <span class="control-card__expand-text">Ver detalle</span>
-            </span>
+      <div class="control-card__summary" role="button" tabindex="0" aria-expanded="false"
+           data-ctrl-toggle data-label-closed="${esc(diffLabelClosed)}" data-label-open="${esc(diffLabelOpen)}">
+        <div class="control-card__row">
+          <span class="status-dot status-dot--${TIER_DOT[tier]}" aria-hidden="true"></span>
+          <h3 class="control-card__name">${esc(ctrl.label)}</h3>
+          <span class="control-card__headline">${esc(summary.headline)}</span>
+          <span class="control-card__expand">
+            <span class="control-card__expand-text">${esc(diffLabelClosed)}</span>
+          </span>
+        </div>
+        ${summary.insights?.length ? `
+          <div class="control-card__insights">
+            ${summary.insights.map(i => `
+              <span class="badge badge--${esc(i.type)}">
+                <strong style="margin-right:4px;">${esc(String(i.value))}</strong>${esc(i.label)}
+              </span>
+            `).join('')}
           </div>
-          ${summary.insights?.length ? `
-            <div class="control-card__insights">
-              ${summary.insights.map(i => `
-                <span class="badge badge--${esc(i.type)}">
-                  <strong style="margin-right:4px;">${esc(String(i.value))}</strong>${esc(i.label)}
-                </span>
-              `).join('')}
-            </div>
-          ` : ''}
-        </summary>
-        <div class="control-card__detail" id="js-ctrl-${esc(row.controlId)}"></div>
-      </details>
+        ` : ''}
+      </div>
+      <div class="ctrl-detail-grid">
+        <div class="ctrl-detail-grid__inner">
+          <div class="control-card__detail" id="js-ctrl-${esc(row.controlId)}"></div>
+        </div>
+      </div>
     `;
     sectionsEl.appendChild(card);
 
     const detailEl = card.querySelector(`#js-ctrl-${CSS.escape(row.controlId)}`);
     ctrl.renderResults(row.results, detailEl);
+
+    initCtrlToggle(card);
   }
 
   // "Ir al detalle →" / "Detalle" del hero: abre y hace scroll a la tarjeta de abajo
@@ -152,16 +169,81 @@ export async function renderControlsResults(root, runId) {
       const id = btn.dataset.heroDetail;
       const card = sectionsEl.querySelector(`[data-control-id="${CSS.escape(id)}"]`);
       if (!card) return;
-      const details = card.querySelector('details');
-      if (details) details.open = true;
+      openCtrlToggle(card);
       card.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
 }
 
+// ── A3 — fila de diferencias expandible (grid 0fr⇄1fr, sin medir en JS) ─────
+
+function initCtrlToggle(card) {
+  const toggle = card.querySelector('[data-ctrl-toggle]');
+  const grid = card.querySelector('.ctrl-detail-grid');
+  if (!toggle || !grid) return;
+
+  const setOpen = (open) => {
+    toggle.setAttribute('aria-expanded', String(open));
+    grid.classList.toggle('is-open', open);
+    const textEl = toggle.querySelector('.control-card__expand-text');
+    if (textEl) textEl.textContent = open ? toggle.dataset.labelOpen : toggle.dataset.labelClosed;
+  };
+
+  toggle.addEventListener('click', () => setOpen(toggle.getAttribute('aria-expanded') !== 'true'));
+  toggle.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      setOpen(toggle.getAttribute('aria-expanded') !== 'true');
+    }
+  });
+}
+
+function openCtrlToggle(card) {
+  const toggle = card.querySelector('[data-ctrl-toggle]');
+  const grid = card.querySelector('.ctrl-detail-grid');
+  if (!toggle || !grid) return;
+  toggle.setAttribute('aria-expanded', 'true');
+  grid.classList.add('is-open');
+  const textEl = toggle.querySelector('.control-card__expand-text');
+  if (textEl) textEl.textContent = toggle.dataset.labelOpen;
+}
+
+// ── A4 — tier de cada control en la corrida previa (mismo cliente/período) ──
+
+async function getPrevTierByControlId(run, thresholdPct) {
+  const siblingRuns = await getControlRuns(run.clientId);
+  const samePeriod = siblingRuns
+    .filter(r => r.period === run.period)
+    .sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+  const idx = samePeriod.findIndex(r => r.id === run.id);
+  if (idx <= 0) return {};
+  const prevRun = samePeriod[idx - 1];
+
+  const prevResultsRows = await getControlRunResults(prevRun.id);
+  const prevTierByControlId = {};
+  for (const row of prevResultsRows) {
+    const ctrl = CONTROL_REGISTRY[row.controlId];
+    if (!ctrl?.summarize) continue;
+    const summary = ctrl.summarize(row.results);
+    const tier = summary.status === 'error'
+      ? 'error'
+      : summary.unitsTotal == null
+        ? 'info'
+        : computeSemaforoStatus(summary.unitsWithDiff, summary.unitsTotal, thresholdPct);
+    prevTierByControlId[row.controlId] = tier;
+  }
+  return prevTierByControlId;
+}
+
+// ── A2 — Gauge SVG: constantes compartidas con animateHeroGauge ─────────────
+const GAUGE_R = 82;
+const GAUGE_CIRC = 2 * Math.PI * GAUGE_R;
+
 // ── Hero de resultados ──────────────────────────────────────────────────────
 
-function buildHeroHtml(controlSummaries, runFiles, thresholdPct) {
+function buildHeroHtml(controlSummaries, runFiles, thresholdPct, prevTierByControlId) {
+  const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
   // "Legajos cruzados": tamaño del Tabulado de esta corrida si está disponible;
   // si no (ej. corrida sin Tabulado), el mayor unitsTotal entre controles por legajo.
   const tabFile = runFiles.find(f => f.fileType === 'tab_control');
@@ -191,19 +273,19 @@ function buildHeroHtml(controlSummaries, runFiles, thresholdPct) {
 
   const totalDiffAmount = controlSummaries.reduce((sum, c) => sum + (c.summary.diffTotalAmount || 0), 0);
 
-  // ── Gauge SVG ──────────────────────────────────────────────────────────────
-  const R = 82;
-  const CIRC = 2 * Math.PI * R;
-  const fillLen = (pctOk / 100) * CIRC;
+  // ── Gauge SVG (A2 — arco y número animan juntos vía rAF, ver animateHeroGauge) ──
   const ringClass = overallTier === 'error' ? 'hero-gauge__ring-fill--error'
                   : overallTier === 'warn'  ? 'hero-gauge__ring-fill--warn'
                   : 'hero-gauge__ring-fill--ok';
+  // Con reduced-motion se dibuja directo en el valor final; si no, arranca en 0
+  // y animateHeroGauge lo lleva al valor real cuadro a cuadro.
+  const initialFillLen = reduceMotion ? (pctOk / 100) * GAUGE_CIRC : 0;
 
   const gaugeSvg = `
     <svg width="190" height="190" viewBox="0 0 190 190">
-      <circle class="hero-gauge__ring-bg" cx="95" cy="95" r="${R}"></circle>
-      <circle class="hero-gauge__ring-fill ${ringClass}" cx="95" cy="95" r="${R}"
-        stroke-dasharray="${fillLen.toFixed(1)} ${CIRC.toFixed(1)}"></circle>
+      <circle class="hero-gauge__ring-bg" cx="95" cy="95" r="${GAUGE_R}"></circle>
+      <circle class="hero-gauge__ring-fill ${ringClass}" data-gauge-fill cx="95" cy="95" r="${GAUGE_R}"
+        stroke-dasharray="${initialFillLen.toFixed(1)} ${GAUGE_CIRC.toFixed(1)}"></circle>
     </svg>
   `;
 
@@ -228,16 +310,20 @@ function buildHeroHtml(controlSummaries, runFiles, thresholdPct) {
       + (totalDiffAmount > 0 ? ` · dif. total <strong>$ ${formatAmount(totalDiffAmount)}</strong>` : '');
   }
 
-  // ── Filas por control (errores primero — ya vienen ordenadas) ───────────────
-  const rowsHtml = controlSummaries.map(buildCtrlRowHtml).join('');
+  // ── Filas por control (errores primero — ya vienen ordenadas) ──────────────
+  // A1/A4 — cascada de entrada (stagger errores-primero, capado a 6) + pulso
+  // de mejora respecto de la corrida anterior (ver getPrevTierByControlId).
+  const rowsHtml = controlSummaries
+    .map((item, i) => buildCtrlRowHtml(item, i, prevTierByControlId, reduceMotion))
+    .join('');
 
-  return `
+  const html = `
     <div class="hero-verdict">
       <div class="hero-verdict__gauge-col">
         <div class="hero-gauge">
           ${gaugeSvg}
           <div class="hero-gauge__center">
-            <span class="hero-gauge__pct">${fmtPct1(pctOk)}%</span>
+            <span class="hero-gauge__pct" data-gauge-pct>${reduceMotion ? fmtPct1(pctOk) : '0,0'}%</span>
             <span class="hero-gauge__label">legajos OK</span>
           </div>
         </div>
@@ -270,14 +356,32 @@ function buildHeroHtml(controlSummaries, runFiles, thresholdPct) {
       </div>
     </div>
   `;
+
+  return { html, pctOk, overallTier };
 }
 
-function buildCtrlRowHtml(item) {
+function buildCtrlRowHtml(item, index, prevTierByControlId, reduceMotion) {
   const { row, ctrl, summary, tier } = item;
   const rowClass = tier === 'error' ? 'hero-ctrl-row--error'
                  : tier === 'warn'  ? 'hero-ctrl-row--warn'
                  : tier === 'info'  ? 'hero-ctrl-row--neutral'
                  : 'hero-ctrl-row--ok';
+
+  // A4 — ¿mejoró respecto de la corrida anterior para este cliente/período?
+  const prevTier = prevTierByControlId?.[row.controlId];
+  const improved = prevTier != null && TIER_RANK[tier] > TIER_RANK[prevTier];
+
+  let animStyle = '';
+  if (!reduceMotion) {
+    if (improved) {
+      // Re-entra con cardIn corto: refuerza "esto cambió" sin el stagger de montaje.
+      animStyle = `animation: cardIn 0.4s cubic-bezier(.4,0,.2,1) both;`;
+    } else {
+      const delay = Math.min(index, 5) * 0.13;
+      animStyle = `animation: cardIn 0.45s cubic-bezier(.4,0,.2,1) ${delay}s both;`;
+    }
+  }
+  const dotPulseClass = improved && tier === 'ok' ? 'status-dot--pulse-ok' : '';
 
   let countText = '';
   let contextText;
@@ -314,14 +418,38 @@ function buildCtrlRowHtml(item) {
   }
 
   return `
-    <div class="hero-ctrl-row ${rowClass}">
-      <span class="status-dot status-dot--${TIER_DOT[tier]}"></span>
+    <div class="hero-ctrl-row ${rowClass}" style="${animStyle}">
+      <span class="status-dot status-dot--${TIER_DOT[tier]} ${dotPulseClass}"></span>
       <strong class="hero-ctrl-row__name">${esc(ctrl.label)}</strong>
       ${countText ? `<span class="hero-ctrl-row__count">${esc(countText)}</span>` : ''}
       <span class="hero-ctrl-row__context">${esc(contextText)}</span>
       <button type="button" class="hero-ctrl-row__link" data-hero-detail="${esc(row.controlId)}">${esc(linkText)}</button>
     </div>
   `;
+}
+
+// ── A2 — Entrada del veredicto: arco + número avanzan juntos vía rAF ────────
+// Corre una sola vez por montaje del hero (también al abrir un run guardado).
+// Con prefers-reduced-motion, buildHeroHtml ya dibujó el valor final: no-op.
+function animateHeroGauge(heroEl, pctOk, overallTier) {
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+
+  const fillEl = heroEl.querySelector('[data-gauge-fill]');
+  const pctEl  = heroEl.querySelector('[data-gauge-pct]');
+  if (!fillEl || !pctEl) return;
+
+  const t0 = performance.now();
+  const DUR = 1400;
+
+  function tick(now) {
+    const p = Math.min(1, (now - t0) / DUR);
+    const e = 1 - Math.pow(1 - p, 3); // ease-out cúbico
+    const current = pctOk * e;
+    fillEl.setAttribute('stroke-dasharray', `${(current / 100 * GAUGE_CIRC).toFixed(1)} ${GAUGE_CIRC.toFixed(1)}`);
+    pctEl.textContent = `${fmtPct1(current)}%`;
+    if (p < 1) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
 }
 
 // ── Banner Borrador / Definitivo ─────────────────────────────────────────────
