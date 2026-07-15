@@ -1,6 +1,8 @@
 // nr.js — Control No Remunerativos (Control NR)
-import { showToast } from '../ui/toast.js';
 import { diffStats } from './semaforo.js';
+import { renderExportMenu } from '../ui/exportMenu.js';
+import { initShowMorePagination, initSearchCombobox } from '../ui/tableTools.js';
+import { loadExcelJS, downloadWorkbook, downloadCsv, copyRowsToClipboard } from '../utils/exportData.js';
 //
 // Modo 1 — "Controlar": cruza los 18 conceptos NR del Reporte de M4
 //   contra las columnas configuradas en el Tabulado.
@@ -218,12 +220,15 @@ export function renderNrResults(results, container) {
 
   const filteredResults = { ...results, rows: diffRows };
 
-  // ── Toolbar: filtro por concepto + exportar ───────────────────────────────
+  // ── Toolbar: filtro por concepto + buscador (izquierda) + exportar (derecha) ─
   // Sólo listamos conceptos que efectivamente tienen alguna diferencia.
   const conceptsWithDiff = NR_CONCEPTS.filter(c => diffRows.some(r => isDif(r.valores[c.key].ctrl)));
 
   const toolbar = document.createElement('div');
-  toolbar.style.cssText = 'display:flex;flex-wrap:wrap;gap:var(--sp-3);justify-content:space-between;align-items:flex-end;padding:var(--sp-3) var(--sp-3) 0;';
+  toolbar.className = 'results-toolbar';
+
+  const leftGroup = document.createElement('div');
+  leftGroup.style.cssText = 'display:flex;flex-wrap:wrap;gap:var(--sp-3);align-items:flex-end;';
 
   const filterGroup = document.createElement('div');
   filterGroup.className = 'form-group';
@@ -238,25 +243,31 @@ export function renderNrResults(results, container) {
     </select>
   `;
 
-  const exportBtn = document.createElement('button');
-  exportBtn.className = 'btn btn--primary btn--sm';
-  exportBtn.textContent = '⬇ Exportar .xlsx';
-  exportBtn.addEventListener('click', async () => {
-    exportBtn.disabled = true;
-    exportBtn.textContent = 'Generando…';
-    try {
-      await exportNrToXlsx(filteredResults);
-    } catch (err) {
-      showToast('Error al generar el archivo: ' + err.message, 'danger');
-    } finally {
-      exportBtn.disabled = false;
-      exportBtn.textContent = '⬇ Exportar .xlsx';
-    }
+  const searchEl = document.createElement('div');
+
+  leftGroup.appendChild(filterGroup);
+  leftGroup.appendChild(searchEl);
+
+  const exportEl = document.createElement('div');
+
+  toolbar.appendChild(leftGroup);
+  toolbar.appendChild(exportEl);
+  container.appendChild(toolbar);
+
+  // Exportar siempre incluye TODOS los legajos con diferencia y los 18
+  // conceptos completos (igual que exportNrToXlsx) — el filtro de concepto de
+  // arriba sólo recorta lo que se ve en pantalla, no lo que se exporta.
+  const csvHeaders = ['Legajo', '# Difs', ...NR_CONCEPTS.map(c => c.label)];
+  const csvRows = () => diffRows.map(r => {
+    const difs = NR_CONCEPTS.filter(c => isDif(r.valores[c.key].ctrl)).length;
+    return [r.legajo, difs, ...NR_CONCEPTS.map(c => fmtNum(r.valores[c.key].ctrl))];
   });
 
-  toolbar.appendChild(filterGroup);
-  toolbar.appendChild(exportBtn);
-  container.appendChild(toolbar);
+  renderExportMenu(exportEl, {
+    onExcel: () => exportNrToXlsx(filteredResults),
+    onCsv:   () => downloadCsv(csvHeaders, csvRows(), `NR_Control_${periodSuffix(results.period)}.csv`),
+    onCopy:  () => copyRowsToClipboard(csvHeaders, csvRows()),
+  });
 
   // ── Tabla (se re-renderiza al cambiar el filtro de concepto) ───────────────
   const cellBg = c => c.group === 'indem' ? INDEM_BG : OTROS_BG;
@@ -314,6 +325,18 @@ export function renderNrResults(results, container) {
         Exportá el .xlsx para ver los valores originales de cada fuente.
       </p>
     `;
+
+    // Paginación (tablas de cientos de legajos) + buscador por legajo — se
+    // re-inicializan porque el <tbody> se recrea entero en cada filtro.
+    const tbodyEl = tableHost.querySelector('tbody');
+    const pagination = initShowMorePagination(tbodyEl, { pageSize: 50 });
+    initSearchCombobox(searchEl, {
+      rows: shownRows,
+      trEls: pagination.dataRows,
+      getLabel: r => `${r.legajo}`,
+      label: 'Buscar legajo',
+      pagination,
+    });
   }
 
   filterGroup.querySelector('[data-nr-concept-filter]')
@@ -418,13 +441,16 @@ export function renderNrReporteResults(results, container) {
 
   const filteredResults = { ...results, rows: relevantRows };
 
-  // ── Toolbar: filtro por concepto + exportar ───────────────────────────────
+  // ── Toolbar: filtro por concepto + buscador (izquierda) + exportar (derecha) ─
   const conceptsWithValue = NR_CONCEPTS.filter(c =>
     relevantRows.some(r => r[c.key] !== null && Math.abs(r[c.key]) > 0.01)
   );
 
   const toolbar = document.createElement('div');
-  toolbar.style.cssText = 'display:flex;flex-wrap:wrap;gap:var(--sp-3);justify-content:space-between;align-items:flex-end;padding:var(--sp-3) var(--sp-3) 0;';
+  toolbar.className = 'results-toolbar';
+
+  const leftGroup = document.createElement('div');
+  leftGroup.style.cssText = 'display:flex;flex-wrap:wrap;gap:var(--sp-3);align-items:flex-end;';
 
   const filterGroup = document.createElement('div');
   filterGroup.className = 'form-group';
@@ -439,25 +465,31 @@ export function renderNrReporteResults(results, container) {
     </select>
   `;
 
-  const exportBtn = document.createElement('button');
-  exportBtn.className = 'btn btn--primary btn--sm';
-  exportBtn.textContent = '⬇ Exportar .xlsx';
-  exportBtn.addEventListener('click', async () => {
-    exportBtn.disabled = true;
-    exportBtn.textContent = 'Generando…';
-    try {
-      await exportNrReporteToXlsx(filteredResults);
-    } catch (err) {
-      showToast('Error al generar el archivo: ' + err.message, 'danger');
-    } finally {
-      exportBtn.disabled = false;
-      exportBtn.textContent = '⬇ Exportar .xlsx';
-    }
-  });
+  const searchEl = document.createElement('div');
 
-  toolbar.appendChild(filterGroup);
-  toolbar.appendChild(exportBtn);
+  leftGroup.appendChild(filterGroup);
+  leftGroup.appendChild(searchEl);
+
+  const exportEl = document.createElement('div');
+
+  toolbar.appendChild(leftGroup);
+  toolbar.appendChild(exportEl);
   container.appendChild(toolbar);
+
+  // Exportar siempre incluye TODOS los empleados con valores NR y las 18
+  // columnas de conceptos completas (igual que exportNrReporteToXlsx) — el
+  // filtro de concepto de arriba sólo recorta lo que se ve en pantalla.
+  const csvHeaders = ['ID_EMPLEADO', 'NOMBRE', 'APELLIDO_1', 'FECHA_ALTA', 'FECHA_BAJA', 'FEC_PAGO', 'ID_CENTRO_TRAB', 'ID_CATEGORIA', ...NR_CONCEPTS.map(c => c.label)];
+  const csvRows = () => relevantRows.map(r => [
+    r.legajo, r.nombre ?? '', r.apellido1 ?? '', r.fecAlta ?? '', r.fecBaja ?? '', r.fecPago ?? '', r.idCentroTrab ?? '', r.idCategoria ?? '',
+    ...NR_CONCEPTS.map(c => fmtNum(r[c.key])),
+  ]);
+
+  renderExportMenu(exportEl, {
+    onExcel: () => exportNrReporteToXlsx(filteredResults),
+    onCsv:   () => downloadCsv(csvHeaders, csvRows(), `NR_Reporte_${periodSuffix(results.period)}.csv`),
+    onCopy:  () => copyRowsToClipboard(csvHeaders, csvRows()),
+  });
 
   // ── Tabla (re-render al cambiar el filtro) ────────────────────────────────
   const tableHost = document.createElement('div');
@@ -518,6 +550,17 @@ export function renderNrReporteResults(results, container) {
         El .xlsx exportado incluye las 18 columnas de conceptos en el layout estándar.
       </p>
     `;
+
+    // Paginación (tablas de cientos de legajos) + buscador por legajo/nombre —
+    // se re-inicializan porque el <tbody> se recrea entero en cada filtro.
+    const tbodyEl = tableHost.querySelector('tbody');
+    const pagination = initShowMorePagination(tbodyEl, { pageSize: 50 });
+    initSearchCombobox(searchEl, {
+      rows: shownRows,
+      trEls: pagination.dataRows,
+      getLabel: r => r.nombre ? `${r.legajo} — ${r.nombre}` : `${r.legajo}`,
+      pagination,
+    });
   }
 
   filterGroup.querySelector('[data-nr-concept-filter]')
@@ -526,18 +569,6 @@ export function renderNrReporteResults(results, container) {
 }
 
 // ── Exports a Excel ───────────────────────────────────────────────────────────
-
-async function loadExcelJS() {
-  if (!window.ExcelJS) {
-    await new Promise((resolve, reject) => {
-      const s = document.createElement('script');
-      s.src = 'https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js';
-      s.onload = resolve;
-      s.onerror = () => reject(new Error('No se pudo cargar ExcelJS. Verificá la conexión a internet.'));
-      document.head.appendChild(s);
-    });
-  }
-}
 
 // XLSX "Controlar": Legajo + 18 columnas CTRL (Tab − NR), coloreadas por grupo
 async function exportNrToXlsx(results) {
@@ -618,7 +649,7 @@ async function exportNrToXlsx(results) {
     });
   }
 
-  await downloadXlsx(wb, `NR_Control_${periodSuffix(results.period)}.xlsx`);
+  await downloadWorkbook(wb, `NR_Control_${periodSuffix(results.period)}.xlsx`);
 }
 
 // XLSX "Generar Reporte": A(vacía) · B=ID_EMPLEADO · ... · I=ID_CATEGORIA · J-AA=18 conceptos
@@ -714,7 +745,7 @@ async function exportNrReporteToXlsx(results) {
     });
   }
 
-  await downloadXlsx(wb, `NR_Reporte_${periodSuffix(results.period)}.xlsx`);
+  await downloadWorkbook(wb, `NR_Reporte_${periodSuffix(results.period)}.xlsx`);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -751,17 +782,4 @@ function periodSuffix(period) {
   if (!period) return dateSuffix();
   const [year, month] = period.split('-');
   return (!year || !month) ? dateSuffix() : String(month).padStart(2, '0') + year;
-}
-
-async function downloadXlsx(wb, fileName) {
-  const buf  = await wb.xlsx.writeBuffer();
-  const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href     = url;
-  a.download = fileName;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }

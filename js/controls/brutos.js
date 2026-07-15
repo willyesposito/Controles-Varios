@@ -1,6 +1,8 @@
 // brutos.js — Controles del Reporte de Brutos
-import { showToast } from '../ui/toast.js';
 import { diffStats } from './semaforo.js';
+import { renderExportMenu } from '../ui/exportMenu.js';
+import { initShowMorePagination, initSearchCombobox } from '../ui/tableTools.js';
+import { loadExcelJS, downloadWorkbook, downloadCsv, copyRowsToClipboard } from '../utils/exportData.js';
 //
 // Modo 1 — "Controlar": cruza SAL_BASE y A_CTA_FUT_AUMEN del Reporte de Brutos
 //   contra las columnas configuradas en el Tabulado (tabSalBaseColumn / tabACuFutAumenColumn).
@@ -162,25 +164,13 @@ export function renderBrutosResults(results, container) {
     </div>
   `;
 
-  // Botón exportar
+  // Barra: buscador (izquierda) + menú de exportar (derecha)
   const toolbar = document.createElement('div');
-  toolbar.style.cssText = 'display:flex;justify-content:flex-end;padding:var(--sp-3) var(--sp-3) 0;';
-  const exportBtn = document.createElement('button');
-  exportBtn.className = 'btn btn--primary btn--sm';
-  exportBtn.textContent = '⬇ Exportar .xlsx';
-  exportBtn.addEventListener('click', async () => {
-    exportBtn.disabled = true;
-    exportBtn.textContent = 'Generando…';
-    try {
-      await exportBrutosToXlsx(results);
-    } catch (err) {
-      showToast('Error al generar el archivo: ' + err.message, 'danger');
-    } finally {
-      exportBtn.disabled = false;
-      exportBtn.textContent = '⬇ Exportar .xlsx';
-    }
-  });
-  toolbar.appendChild(exportBtn);
+  toolbar.className = 'results-toolbar';
+  const searchEl = document.createElement('div');
+  const exportEl = document.createElement('div');
+  toolbar.appendChild(searchEl);
+  toolbar.appendChild(exportEl);
 
   // Tabla
   const tableWrap = document.createElement('div');
@@ -227,6 +217,25 @@ export function renderBrutosResults(results, container) {
   container.appendChild(chipEl);
   container.appendChild(toolbar);
   container.appendChild(tableWrap);
+
+  // Paginación (tablas de cientos de legajos) + buscador por legajo/nombre
+  const tbodyEl = tableWrap.querySelector('tbody');
+  const pagination = initShowMorePagination(tbodyEl, { pageSize: 50 });
+  initSearchCombobox(searchEl, {
+    rows,
+    trEls: pagination.dataRows,
+    getLabel: r => `${r.legajo} — ${r.nombre}`,
+    pagination,
+  });
+
+  const csvHeaders = ['Legajo', 'Nombre', 'SAL_BASE', 'CTRL SALARIO BASE', 'A_CTA_FUT_AUMEN', 'CTRL A_CTA_FUT_AUMEN', 'Legajo (Tab)', 'SAL_BASE (Tab)', 'A_CTA_FUT (Tab)'];
+  const csvRows = () => rows.map(r => [r.legajo, r.nombre, fmt(r.salBase), fmt(r.ctrlSalBase), fmt(r.aCuFutAumen), fmt(r.ctrlACuFutAumen), r.legajo, fmt(r.tabValSal), fmt(r.tabValAcu)]);
+
+  renderExportMenu(exportEl, {
+    onExcel: () => exportBrutosToXlsx(results),
+    onCsv:   () => downloadCsv(csvHeaders, csvRows(), `Brutos_Control_${periodSuffix(results.period)}.csv`),
+    onCopy:  () => copyRowsToClipboard(csvHeaders, csvRows()),
+  });
 }
 
 // ── Modo 2: Generar Reporte ───────────────────────────────────────────────────
@@ -326,25 +335,13 @@ export function renderBrutosReporteResults(results, container) {
     cols.hasPuesto    && { label: 'N_PUESTO',         key: 'puesto',      type: 'txt' },
   ].filter(Boolean);
 
-  // Botón exportar
+  // Barra: buscador (izquierda) + menú de exportar (derecha)
   const toolbar = document.createElement('div');
-  toolbar.style.cssText = 'display:flex;justify-content:flex-end;padding:var(--sp-3) var(--sp-3) 0;';
-  const exportBtn = document.createElement('button');
-  exportBtn.className = 'btn btn--primary btn--sm';
-  exportBtn.textContent = '⬇ Exportar .xlsx';
-  exportBtn.addEventListener('click', async () => {
-    exportBtn.disabled = true;
-    exportBtn.textContent = 'Generando…';
-    try {
-      await exportBrutosReporteToXlsx(results);
-    } catch (err) {
-      showToast('Error al generar el archivo: ' + err.message, 'danger');
-    } finally {
-      exportBtn.disabled = false;
-      exportBtn.textContent = '⬇ Exportar .xlsx';
-    }
-  });
-  toolbar.appendChild(exportBtn);
+  toolbar.className = 'results-toolbar';
+  const searchEl = document.createElement('div');
+  const exportEl = document.createElement('div');
+  toolbar.appendChild(searchEl);
+  toolbar.appendChild(exportEl);
 
   // Tabla
   const tableWrap = document.createElement('div');
@@ -382,21 +379,31 @@ export function renderBrutosReporteResults(results, container) {
   container.innerHTML = '';
   container.appendChild(toolbar);
   container.appendChild(tableWrap);
+
+  if (colDefs.length <= 1) return; // sin tabla real, no hay nada que paginar/exportar
+
+  const tbodyEl = tableWrap.querySelector('tbody');
+  const pagination = initShowMorePagination(tbodyEl, { pageSize: 50 });
+  const legajoKey  = colDefs.find(c => c.key === 'legajo') ? 'legajo' : colDefs[0].key;
+  const nombreKey  = cols.hasNombre ? 'nombre' : (cols.hasApellido1 ? 'apellido1' : null);
+  initSearchCombobox(searchEl, {
+    rows,
+    trEls: pagination.dataRows,
+    getLabel: r => nombreKey ? `${r[legajoKey]} — ${r[nombreKey]}` : `${r[legajoKey]}`,
+    pagination,
+  });
+
+  const csvHeaders = colDefs.map(c => c.label);
+  const csvRows = () => rows.map(r => colDefs.map(c => c.type === 'num' ? fmt(r[c.key]) : (r[c.key] ?? '')));
+
+  renderExportMenu(exportEl, {
+    onExcel: () => exportBrutosReporteToXlsx(results),
+    onCsv:   () => downloadCsv(csvHeaders, csvRows(), `Brutos_Reporte_${periodSuffix(results.period)}.csv`),
+    onCopy:  () => copyRowsToClipboard(csvHeaders, csvRows()),
+  });
 }
 
 // ── Exports a Excel ───────────────────────────────────────────────────────────
-
-async function loadExcelJS() {
-  if (!window.ExcelJS) {
-    await new Promise((resolve, reject) => {
-      const s = document.createElement('script');
-      s.src = 'https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js';
-      s.onload = resolve;
-      s.onerror = () => reject(new Error('No se pudo cargar ExcelJS. Verificá la conexión a internet.'));
-      document.head.appendChild(s);
-    });
-  }
-}
 
 async function exportBrutosToXlsx(results) {
   await loadExcelJS();
@@ -484,7 +491,7 @@ async function exportBrutosToXlsx(results) {
     dr.getCell(7).font = { ...base };
   }
 
-  await downloadXlsx(wb, `Brutos_Control_${periodSuffix(period)}.xlsx`);
+  await downloadWorkbook(wb, `Brutos_Control_${periodSuffix(period)}.xlsx`);
 }
 
 async function exportBrutosReporteToXlsx(results) {
@@ -542,7 +549,7 @@ async function exportBrutosReporteToXlsx(results) {
     });
   }
 
-  await downloadXlsx(wb, `Brutos_Reporte_${periodSuffix(results.period)}.xlsx`);
+  await downloadWorkbook(wb, `Brutos_Reporte_${periodSuffix(results.period)}.xlsx`);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -637,17 +644,4 @@ function lastBusinessDay(year, month) {
 // Fecha como D/M/YYYY (formato usado en el archivo de Brutos)
 function fmtDateAR(d) {
   return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
-}
-
-async function downloadXlsx(wb, fileName) {
-  const buf  = await wb.xlsx.writeBuffer();
-  const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href     = url;
-  a.download = fileName;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }
