@@ -88,6 +88,35 @@
   --z-modal:   200;
   --z-toast:   300;
 
+  /* ══════════════════════════════════════════════════════════
+     Tokens "tools" H&A — usados por el rediseño de Controles
+     Nómina (hero de resultados, home, wizard). Conviven con los
+     tokens --color-* de arriba; no los reemplazan.
+     ══════════════════════════════════════════════════════════ */
+  --celeste:        #00ACD4;
+  --celeste-dark:   #0090B4;
+  --celeste-deeper: #007896;
+  --celeste-dim:    rgba(0, 172, 212, 0.10);
+  --celeste-border: rgba(0, 172, 212, 0.30);
+
+  --ink: #15263D;
+  --t1:  #1E3A5F;
+  --t2:  #4A6080;
+  --t3:  #8FA3BA;
+
+  --paper:     #FCFCFB;
+  --line:      #E7E6E6;
+  --line-soft: #EFEEEC;
+
+  --ok:      #22C55E;  --ok-bg:      rgba(34,197,94,0.10);   --ok-bd:      rgba(34,197,94,0.30);   --ok-tx:      #177A50;
+  --warn:    #F59E0B;  --warn-bg:    rgba(245,158,11,0.12);  --warn-bd:    rgba(245,158,11,0.32);  --warn-tx:    #9A5A0B;
+  --error:   #E85518;  --error-bg:   rgba(232,85,24,0.10);   --error-bd:   rgba(232,85,24,0.30);   --error-tx:   #C0420F;
+  --neutral: #8C837B;  --neutral-bg: rgba(140,131,123,0.12); --neutral-bd: rgba(140,131,123,0.30); --neutral-tx: #6B635C;
+
+  --sh-tool: 0 6px 24px rgba(30,58,95,0.09);
+
+  --font-tool: 'Plus Jakarta Sans', 'Source Sans Pro', system-ui, Arial, sans-serif;
+  --serif:     'DM Serif Display', Georgia, 'Times New Roman', serif;
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -119,7 +148,27 @@
     --shadow-md:  0 4px 12px rgba(0, 0, 0, 0.45);
     --shadow-lg:  0 8px 24px rgba(0, 0, 0, 0.55);
 
+    --celeste:        #1FBEE0;
+    --celeste-dark:   #16A6C6;
+    --celeste-deeper: #5AD2EE;
+    --celeste-dim:    rgba(31,190,224,0.14);
+    --celeste-border: rgba(31,190,224,0.34);
 
+    --ink: #EAF1F8;
+    --t1:  #DCE6F0;
+    --t2:  #92A6BC;
+    --t3:  #5F758D;
+
+    --paper:     #0B1521;
+    --line:      #23364A;
+    --line-soft: #1A2837;
+
+    --ok-bg:      rgba(34,197,94,0.15);   --ok-bd:      rgba(34,197,94,0.36);   --ok-tx:      #4ADE80;
+    --warn-bg:    rgba(245,158,11,0.15);  --warn-bd:    rgba(245,158,11,0.36);  --warn-tx:    #FBBF24;
+    --error-bg:   rgba(232,85,24,0.16);   --error-bd:   rgba(232,85,24,0.42);   --error-tx:   #FB8254;
+    --neutral-bg: rgba(140,131,123,0.18); --neutral-bd: rgba(140,131,123,0.34); --neutral-tx: #B6ABA0;
+
+    --sh-tool: 0 8px 28px rgba(0,0,0,0.50);
   }
 }
 
@@ -159,6 +208,28 @@
   --color-group-teal-bg:   #002622;
   --color-group-amber:     #FFD54F;
   --color-group-amber-bg:  #3E2900;
+
+  --celeste:        #1FBEE0;
+  --celeste-dark:   #16A6C6;
+  --celeste-deeper: #5AD2EE;
+  --celeste-dim:    rgba(31,190,224,0.14);
+  --celeste-border: rgba(31,190,224,0.34);
+
+  --ink: #EAF1F8;
+  --t1:  #DCE6F0;
+  --t2:  #92A6BC;
+  --t3:  #5F758D;
+
+  --paper:     #0B1521;
+  --line:      #23364A;
+  --line-soft: #1A2837;
+
+  --ok-bg:      rgba(34,197,94,0.15);   --ok-bd:      rgba(34,197,94,0.36);   --ok-tx:      #4ADE80;
+  --warn-bg:    rgba(245,158,11,0.15);  --warn-bd:    rgba(245,158,11,0.36);  --warn-tx:    #FBBF24;
+  --error-bg:   rgba(232,85,24,0.16);   --error-bd:   rgba(232,85,24,0.42);   --error-tx:   #FB8254;
+  --neutral-bg: rgba(140,131,123,0.18); --neutral-bd: rgba(140,131,123,0.34); --neutral-tx: #B6ABA0;
+
+  --sh-tool: 0 8px 28px rgba(0,0,0,0.50);
 }
 
 [data-theme="light"] {
@@ -185,4 +256,26 @@
   --shadow-sm:  0 1px 3px rgba(0, 0, 0, 0.08);
   --shadow-md:  0 4px 12px rgba(0, 0, 0, 0.10);
   --shadow-lg:  0 8px 24px rgba(0, 0, 0, 0.12);
+
+  --celeste:        #00ACD4;
+  --celeste-dark:   #0090B4;
+  --celeste-deeper: #007896;
+  --celeste-dim:    rgba(0, 172, 212, 0.10);
+  --celeste-border: rgba(0, 172, 212, 0.30);
+
+  --ink: #15263D;
+  --t1:  #1E3A5F;
+  --t2:  #4A6080;
+  --t3:  #8FA3BA;
+
+  --paper:     #FCFCFB;
+  --line:      #E7E6E6;
+  --line-soft: #EFEEEC;
+
+  --ok-bg:      rgba(34,197,94,0.10);   --ok-bd:      rgba(34,197,94,0.30);   --ok-tx:      #177A50;
+  --warn-bg:    rgba(245,158,11,0.12);  --warn-bd:    rgba(245,158,11,0.32);  --warn-tx:    #9A5A0B;
+  --error-bg:   rgba(232,85,24,0.10);   --error-bd:   rgba(232,85,24,0.30);   --error-tx:   #C0420F;
+  --neutral-bg: rgba(140,131,123,0.12); --neutral-bd: rgba(140,131,123,0.30); --neutral-tx: #6B635C;
+
+  --sh-tool: 0 6px 24px rgba(30,58,95,0.09);
 }

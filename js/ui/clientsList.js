@@ -1,24 +1,43 @@
 // clientsList.js — Pantalla de inicio: lista de clientes
 //
-// Desde acá el usuario puede crear un cliente nuevo, arrancar una validación,
-// ir al editor de agrupadores o borrar un cliente.
+// De un vistazo: el estado del mes de cada cliente (semáforo), qué controles
+// corrió y cuándo. Desde acá el usuario ejecuta controles, ve resultados,
+// o entra al menú "⋯" para agrupadores / checklist / borrar.
 
-import { getClients, createClient, updateClient, deleteClient } from '../db.js';
+import { getClients, createClient, deleteClient, getControlRuns, getControlRunResults } from '../db.js';
 import { showToast, showConfirm } from './toast.js';
+import { CONTROL_REGISTRY } from '../controls/registry.js';
+import { computeSemaforoStatus, DEFAULT_SEMAFORO_THRESHOLD_PCT } from '../controls/semaforo.js';
+import { periodToLabel, currentPeriod, previousPeriod, nextPeriod } from '../utils/dates.js';
+
+const TIER_DOT = { ok: 'ok', warn: 'warn', error: 'error', neutral: 'neutral', info: 'neutral' };
+
+// Cierra cualquier menú "⋯" abierto al clickear afuera. Se registra una sola
+// vez a nivel módulo (el módulo sólo se evalúa una vez por carga de página).
+document.addEventListener('click', () => {
+  document.querySelectorAll('.row-menu__panel').forEach(p => p.setAttribute('hidden', ''));
+});
 
 /**
  * Renderiza la pantalla de clientes en el elemento indicado.
  * @param {HTMLElement} root
  */
 export async function renderClientsList(root) {
+  const state = { period: currentPeriod() };
+
   root.innerHTML = `
     <div class="page-content">
       <div class="page-actions">
         <div class="page-actions__title">
           <h2>Clientes</h2>
         </div>
-        <div class="page-actions__buttons">
-          <button class="btn btn--primary" id="js-new-client-btn">+ Nuevo cliente</button>
+        <div class="page-actions__buttons" style="align-items:center;">
+          <div class="month-selector">
+            <button type="button" class="month-selector__arrow" id="js-month-prev" aria-label="Mes anterior">‹</button>
+            <span class="month-selector__label" id="js-month-label"></span>
+            <button type="button" class="month-selector__arrow" id="js-month-next" aria-label="Mes siguiente">›</button>
+          </div>
+          <button class="btn btn--primary btn--pill" id="js-new-client-btn">+ Nuevo cliente</button>
         </div>
       </div>
       <div id="js-clients-container">
@@ -36,12 +55,26 @@ export async function renderClientsList(root) {
     </div>
   `;
 
-  root.querySelector('#js-new-client-btn').addEventListener('click', () => showCreateModal(root));
+  root.querySelector('#js-new-client-btn').addEventListener('click', () => showCreateModal(root, state));
+  root.querySelector('#js-month-prev').addEventListener('click', () => changeMonth(root, state, previousPeriod));
+  root.querySelector('#js-month-next').addEventListener('click', () => changeMonth(root, state, nextPeriod));
 
-  await reloadList(root);
+  updateMonthLabel(root, state);
+  await reloadList(root, state);
 }
 
-async function reloadList(root) {
+async function changeMonth(root, state, stepFn) {
+  state.period = stepFn(state.period);
+  updateMonthLabel(root, state);
+  await reloadList(root, state);
+}
+
+function updateMonthLabel(root, state) {
+  const label = root.querySelector('#js-month-label');
+  if (label) label.textContent = periodToLabel(state.period);
+}
+
+async function reloadList(root, state) {
   const container = root.querySelector('#js-clients-container');
   const clients = await getClients();
 
@@ -89,75 +122,164 @@ async function reloadList(root) {
         </p>
       </div>
     `;
-    container.querySelector('#js-first-client-btn').addEventListener('click', () => showCreateModal(root));
+    container.querySelector('#js-first-client-btn').addEventListener('click', () => showCreateModal(root, state));
     return;
   }
 
+  const rows = await Promise.all(clients.map(c => buildClientRowData(c, state.period)));
+
+  const monthName = periodToLabel(state.period).split(' ')[0];
   container.innerHTML = `
-    <div class="clients-grid">
-      ${clients.map(c => renderClientCard(c)).join('')}
+    <div class="card" style="overflow-x:auto;">
+      <div class="home-table" style="min-width:900px;">
+        <div class="home-table__head">
+          <span>Cliente</span>
+          <span>Estado ${esc(monthName)}</span>
+          <span>Controles del mes</span>
+          <span>Última corrida</span>
+          <span style="text-align:right;">Acciones</span>
+        </div>
+        ${rows.map(renderClientRow).join('')}
+      </div>
     </div>
   `;
 
-  // Adjuntamos eventos a cada botón de cada tarjeta
-  clients.forEach(client => {
-    const card = container.querySelector(`[data-client-id="${client.id}"]`);
-
-    card.querySelector('.js-controls-btn').addEventListener('click', () => {
-      window.location.hash = `#/controls/${client.id}`;
-    });
-
-    card.querySelector('.js-checklist-btn').addEventListener('click', () => {
-      window.location.hash = `#/checklist/${client.id}`;
-    });
-
-    card.querySelector('.js-run-btn').addEventListener('click', () => {
-      window.location.hash = `#/wizard/${client.id}`;
-    });
-
-    card.querySelector('.js-groupers-btn').addEventListener('click', () => {
-      window.location.hash = `#/client/${client.id}/groupers`;
-    });
-
-    card.querySelector('.js-delete-btn').addEventListener('click', async () => {
-      if (!await showConfirm(`¿Borrar el cliente "${client.name}"?\nSe borrarán también todos sus agrupadores y sesiones.`, { type: 'danger', confirmLabel: 'Borrar' })) return;
-      try {
-        await deleteClient(client.id);
-        await reloadList(root);
-      } catch (err) {
-        showToast(`Error al borrar: ${err.message}`, 'danger');
-      }
-    });
-  });
+  rows.forEach(r => attachRowEvents(container, r, root, state));
 }
 
-function renderClientCard(client) {
-  const fecha = client.createdAt
-    ? new Date(client.createdAt).toLocaleDateString('es-AR', { day: '2-digit', month: 'short', year: 'numeric' })
-    : '';
+// Deriva, para un cliente y un período, el estado del mes + mini-dots por
+// control + fecha de la última corrida (de ese período, o la más reciente
+// de cualquier período si este mes no se corrió nada).
+async function buildClientRowData(client, period) {
+  const allRuns = await getControlRuns(client.id); // ya viene ordenado desc por createdAt
+  const runsForPeriod = allRuns.filter(r => r.period === period);
+  const statusRun = runsForPeriod.find(r => r.isDefinitive) || runsForPeriod[0] || null;
+  const lastRunOverall = allRuns[0] || null;
+
+  let status = { tier: 'neutral', label: 'Sin correr este mes' };
+  let miniDots = [];
+
+  if (statusRun) {
+    const resultsRows = await getControlRunResults(statusRun.id);
+    const summaries = resultsRows.map(row => {
+      const ctrl = CONTROL_REGISTRY[row.controlId];
+      if (!ctrl) return null;
+      const summary = ctrl.summarize ? ctrl.summarize(row.results) : { status: 'info' };
+      const tier = summary.status === 'error'
+        ? 'error'
+        : summary.unitsTotal == null
+          ? 'info'
+          : computeSemaforoStatus(summary.unitsWithDiff, summary.unitsTotal, DEFAULT_SEMAFORO_THRESHOLD_PCT);
+      return { ctrl, tier, unitsWithDiff: summary.unitsWithDiff || 0 };
+    }).filter(Boolean);
+
+    miniDots = summaries.map(s => ({ label: s.ctrl.label, tier: s.tier }));
+
+    const checked = summaries.filter(s => s.tier !== 'info');
+    const overallTier = checked.some(s => s.tier === 'error') ? 'error'
+      : checked.some(s => s.tier === 'warn') ? 'warn'
+      : checked.length > 0 ? 'ok' : 'neutral';
+    const totalDiffUnits = checked.reduce((sum, s) => sum + s.unitsWithDiff, 0);
+
+    if (overallTier === 'ok') {
+      status = { tier: 'ok', label: statusRun.isDefinitive ? 'Definitivo · sin difs' : 'Sin diferencias · borrador' };
+    } else if (overallTier === 'error') {
+      status = { tier: 'error', label: `${totalDiffUnits} dif${totalDiffUnits === 1 ? '' : 's'} · revisar` };
+    } else if (overallTier === 'warn') {
+      status = { tier: 'warn', label: `${totalDiffUnits} dif${totalDiffUnits === 1 ? '' : 's'} · en revisión` };
+    } else {
+      status = { tier: 'neutral', label: statusRun.isDefinitive ? 'Definitivo' : 'Borrador' };
+    }
+  }
+
+  const dateSourceRun = statusRun || lastRunOverall;
+  const lastRunText = dateSourceRun
+    ? `${fmtRelativeShort(dateSourceRun.createdAt)} · ${dateSourceRun.isDefinitive ? 'definitivo' : 'borrador'}`
+      + (dateSourceRun.period !== period ? ` (${periodToLabel(dateSourceRun.period)})` : '')
+    : '—';
+
+  return { client, period, statusRun, lastRunOverall, status, miniDots, lastRunText };
+}
+
+function renderClientRow(r) {
+  const { client, status, miniDots, lastRunText, lastRunOverall } = r;
+
+  const miniDotsHtml = miniDots.length
+    ? miniDots.map(d => `<span class="status-dot status-dot--sm status-dot--${TIER_DOT[d.tier]}" title="${esc(d.label)}"></span>`).join('')
+    : '<span style="font-size:12px;color:var(--t3);">—</span>';
+
   return `
-    <div class="card client-card" data-client-id="${client.id}">
-      <div class="card__header">
-        <div>
-          <h3 style="margin:0;font-size:var(--text-lg);">${escHtml(client.name)}</h3>
-          ${fecha ? `<p class="text-sm text-muted" style="margin-top:var(--sp-1);">Creado ${fecha}</p>` : ''}
-        </div>
+    <div class="home-table__row" data-client-id="${client.id}">
+      <div>
+        <strong class="home-table__client-name">${esc(client.name)}</strong>
+        ${client.notes ? `<span class="home-table__client-sub">${esc(client.notes)}</span>` : ''}
       </div>
-      ${client.notes ? `<div class="card__body" style="padding:var(--sp-3) var(--sp-6);font-size:var(--text-sm);color:var(--color-wordmark);">${escHtml(client.notes)}</div>` : ''}
-      <div class="card__footer" style="justify-content:space-between;gap:var(--sp-2);flex-wrap:wrap;">
-        <div style="display:flex;gap:var(--sp-2);flex-wrap:wrap;">
-          <button class="btn btn--primary btn--sm js-controls-btn">📋 Controles</button>
-          <button class="btn btn--secondary btn--sm js-checklist-btn">📊 Estado mensual</button>
-          <button class="btn btn--secondary btn--sm js-run-btn">▶ Cruce nómina</button>
-          <button class="btn btn--secondary btn--sm js-groupers-btn">⚙ Agrupadores</button>
+      <span class="home-table__status home-table__status--${TIER_DOT[status.tier]}">
+        <span class="status-dot status-dot--sm status-dot--${TIER_DOT[status.tier]}"></span>
+        ${esc(status.label)}
+      </span>
+      <span class="home-mini-dots">${miniDotsHtml}</span>
+      <span class="home-table__last-run">${esc(lastRunText)}</span>
+      <div class="home-table__actions">
+        <button class="btn btn--primary btn--sm btn--pill js-run-btn">▶ Ejecutar</button>
+        <button class="btn btn--ghost btn--sm btn--pill js-results-btn" ${lastRunOverall ? '' : 'disabled'}>Resultados</button>
+        <div class="row-menu">
+          <button class="btn btn--ghost btn--sm btn--pill js-menu-btn" aria-label="Más acciones">⋯</button>
+          <div class="row-menu__panel" hidden>
+            <button class="row-menu__item js-groupers-btn">⚙ Agrupadores</button>
+            <button class="row-menu__item js-checklist-btn">📊 Estado mensual</button>
+            <button class="row-menu__item row-menu__item--danger js-delete-btn">🗑 Borrar cliente</button>
+          </div>
         </div>
-        <button class="btn btn--ghost btn--sm js-delete-btn">🗑 Borrar</button>
       </div>
     </div>
   `;
 }
 
-function showCreateModal(root) {
+function attachRowEvents(container, r, root, state) {
+  const row = container.querySelector(`[data-client-id="${r.client.id}"]`);
+  if (!row) return;
+
+  row.querySelector('.js-run-btn').addEventListener('click', () => {
+    window.location.hash = `#/controls/${r.client.id}`;
+  });
+
+  const resultsBtn = row.querySelector('.js-results-btn');
+  if (r.lastRunOverall) {
+    resultsBtn.addEventListener('click', () => {
+      window.location.hash = `#/control-results/${r.lastRunOverall.id}`;
+    });
+  }
+
+  row.querySelector('.js-checklist-btn').addEventListener('click', () => {
+    window.location.hash = `#/checklist/${r.client.id}`;
+  });
+  row.querySelector('.js-groupers-btn').addEventListener('click', () => {
+    window.location.hash = `#/client/${r.client.id}/groupers`;
+  });
+  row.querySelector('.js-delete-btn').addEventListener('click', async () => {
+    row.querySelector('.row-menu__panel')?.setAttribute('hidden', '');
+    if (!await showConfirm(`¿Borrar el cliente "${r.client.name}"?\nSe borrarán también todos sus agrupadores y sesiones.`, { type: 'danger', confirmLabel: 'Borrar' })) return;
+    try {
+      await deleteClient(r.client.id);
+      await reloadList(root, state);
+    } catch (err) {
+      showToast(`Error al borrar: ${err.message}`, 'danger');
+    }
+  });
+
+  const menuBtn = row.querySelector('.js-menu-btn');
+  const panel   = row.querySelector('.row-menu__panel');
+  menuBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const wasHidden = panel.hasAttribute('hidden');
+    document.querySelectorAll('.row-menu__panel').forEach(p => p.setAttribute('hidden', ''));
+    if (wasHidden) panel.removeAttribute('hidden');
+  });
+  panel.addEventListener('click', (e) => e.stopPropagation());
+}
+
+function showCreateModal(root, state) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `
@@ -199,7 +321,7 @@ function showCreateModal(root) {
     try {
       await createClient(name, notes);
       close();
-      await reloadList(root);
+      await reloadList(root, state);
     } catch (err) {
       showToast(`Error al crear el cliente: ${err.message}`, 'danger');
     }
@@ -211,7 +333,17 @@ function showCreateModal(root) {
   });
 }
 
-function escHtml(str) {
+function fmtRelativeShort(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) {
+    return `Hoy ${d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}`;
+  }
+  return d.toLocaleDateString('es-AR', { day: '2-digit', month: 'short' });
+}
+
+function esc(str) {
   return String(str ?? '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
