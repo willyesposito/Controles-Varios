@@ -1352,9 +1352,17 @@ async function executeControls(state, statusEl, container, root) {
 
     stepsDone = 3; renderProgress(); await wait(180);
 
-    // Mostrar resultados inline (sin navegar a otra página), cascada errores-primero.
-    // Si fue quickRun, lastRunId queda null y el banner indica que no se guardó.
-    // Si fue saved, arranca como borrador (isDefinitive=false) y el banner deja promoverlo.
+    // Al terminar, navegar al hero de resultados 1b (gauge + semáforo + cascada
+    // errores-primero, animaciones A2/A3/A4). Ver handoff §Interactions: "mostrar
+    // progreso... navegar al hero 1b al terminar".
+    // Sólo posible con run guardado (el hero lee todo de la DB por runId).
+    if (runId != null) {
+      window.location.hash = `#/control-results/${runId}`;
+      return;
+    }
+
+    // Ejecución rápida: no hay run persistido para navegar, así que mostramos los
+    // resultados inline (cascada errores-primero) y el banner avisa que no se guardó.
     state.lastRunId            = runId;
     state.lastRunResults       = runResults;
     state.lastRunIsDefinitive  = false;
