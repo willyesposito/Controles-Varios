@@ -1,5 +1,6 @@
 // rendVsAsiento.js — Control 6: Rendimiento vs Asiento (Contabilidad Desglosada)
 import { diffStats } from './semaforo.js';
+import { loadExcelJS, downloadWorkbook } from '../utils/exportData.js';
 //
 // Compara el Reporte de Rendimiento de M4 (por CC) contra la Contabilidad
 // Desglosada (CONTA). Para cada CC, agrupa las filas de CONTA clasificando
@@ -1081,31 +1082,6 @@ export function renderRendVsAsientoResults(results, container) {
 
 // ── Excel export ──────────────────────────────────────────────────────────────
 
-async function loadExcelJS() {
-  if (!window.ExcelJS) {
-    await new Promise((resolve, reject) => {
-      const s = document.createElement('script');
-      s.src = 'https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js';
-      s.onload = resolve;
-      s.onerror = () => reject(new Error('No se pudo cargar ExcelJS. Verificá la conexión a internet.'));
-      document.head.appendChild(s);
-    });
-  }
-}
-
-async function downloadXlsx(wb, fileName) {
-  const buf  = await wb.xlsx.writeBuffer();
-  const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href     = url;
-  a.download = fileName;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
 function dateSuffix() {
   return new Date().toISOString().slice(0, 10).replace(/-/g, '');
 }
@@ -1525,5 +1501,5 @@ async function exportRendVsAsientoToXlsx(results) {
     }
   }
 
-  await downloadXlsx(wb, `RendVsCONTA_${pSuffix}.xlsx`);
+  await downloadWorkbook(wb, `RendVsCONTA_${pSuffix}.xlsx`);
 }

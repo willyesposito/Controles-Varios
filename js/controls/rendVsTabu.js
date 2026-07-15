@@ -1,5 +1,8 @@
 // rendVsTabu.js — Control 5: Rendimiento vs Tabulado (RendvsTabu)
 import { diffStats } from './semaforo.js';
+import { renderExportMenu } from '../ui/exportMenu.js';
+import { initShowMorePagination, initSearchCombobox } from '../ui/tableTools.js';
+import { loadExcelJS, downloadWorkbook, downloadCsv, copyRowsToClipboard } from '../utils/exportData.js';
 //
 // Compara el Reporte de Rendimiento de M4 (por CC) contra el Tabulado.
 // Calcula PRECIO, ASIG. ESTÍMULO, CARGAS SS, PROV. MES, PROV. CCSS MES
@@ -344,10 +347,17 @@ export function renderRendVsTabuResults(results, container) {
     `;
   }).join('');
 
-  const exportBtn = document.createElement('div');
-  exportBtn.style.cssText = 'display:flex;justify-content:flex-end;margin-bottom:var(--sp-2);';
-  exportBtn.innerHTML = `<button type="button" id="js-rtv-export" class="btn btn--ghost btn--sm">⬇ Exportar a Excel</button>`;
+  // Barra: buscador (izquierda) + menú de exportar (derecha)
+  const toolbar = document.createElement('div');
+  toolbar.className = 'results-toolbar';
+  const searchEl = document.createElement('div');
+  const exportEl = document.createElement('div');
+  toolbar.appendChild(searchEl);
+  toolbar.appendChild(exportEl);
 
+  // Tabla — la fila de TOTAL GENERAL NO va en el tbody inicial: se agrega
+  // después de armar la paginación, para que quede siempre visible (no es
+  // una fila de datos real, no debe ocultarse ni entrar en la búsqueda).
   const tableWrap = document.createElement('div');
   tableWrap.style.overflowX = 'auto';
   tableWrap.innerHTML = `
@@ -364,47 +374,46 @@ export function renderRendVsTabuResults(results, container) {
       </thead>
       <tbody>
         ${dataRows}
-        <tr style="background:var(--color-surface);">
-          <td colspan="2" style="font-weight:600;white-space:nowrap;">TOTAL GENERAL</td>
-          ${totRow}
-        </tr>
       </tbody>
     </table>
   `;
 
   container.innerHTML = '';
-  container.appendChild(exportBtn);
+  container.appendChild(toolbar);
   container.appendChild(tableWrap);
 
-  container.querySelector('#js-rtv-export')?.addEventListener('click', () => exportRendVsTabuToXlsx(results));
+  // Paginación (clientes con muchos CC) + buscador por código/nombre de CC
+  const tbodyEl = tableWrap.querySelector('tbody');
+  const pagination = initShowMorePagination(tbodyEl, { pageSize: 50 });
+
+  const totalRowEl = document.createElement('tr');
+  totalRowEl.style.background = 'var(--color-surface)';
+  totalRowEl.innerHTML = `
+    <td colspan="2" style="font-weight:600;white-space:nowrap;">TOTAL GENERAL</td>
+    ${totRow}
+  `;
+  tbodyEl.appendChild(totalRowEl);
+
+  initSearchCombobox(searchEl, {
+    rows,
+    trEls: pagination.dataRows,
+    getLabel: r => `${r.ccCode} — ${r.ccName}`,
+    pagination,
+    label: 'Buscar centro de costo',
+    placeholder: 'Código o nombre de CC…',
+  });
+
+  const csvHeaders = ['CC', 'Centro de Costo', ...COLS.flatMap(c => [`${c.label} (Rend)`, `${c.label} (Tab)`, `${c.label} (CTRL)`])];
+  const csvRows = () => rows.map(r => [r.ccCode, r.ccName, ...COLS.flatMap(c => [fmt(r[c.rKey]), fmt(r[c.tKey]), fmt(r[c.dKey])])]);
+
+  renderExportMenu(exportEl, {
+    onExcel: () => exportRendVsTabuToXlsx(results),
+    onCsv:   () => downloadCsv(csvHeaders, csvRows(), `RendVsTabulado_${periodSuffix(results.period)}.csv`),
+    onCopy:  () => copyRowsToClipboard(csvHeaders, csvRows()),
+  });
 }
 
 // ── Excel export ──────────────────────────────────────────────────────────────
-
-async function loadExcelJS() {
-  if (!window.ExcelJS) {
-    await new Promise((resolve, reject) => {
-      const s = document.createElement('script');
-      s.src = 'https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js';
-      s.onload = resolve;
-      s.onerror = () => reject(new Error('No se pudo cargar ExcelJS. Verificá la conexión a internet.'));
-      document.head.appendChild(s);
-    });
-  }
-}
-
-async function downloadXlsx(wb, fileName) {
-  const buf  = await wb.xlsx.writeBuffer();
-  const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href     = url;
-  a.download = fileName;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
 
 function dateSuffix() {
   return new Date().toISOString().slice(0, 10).replace(/-/g, '');
@@ -555,5 +564,5 @@ async function exportRendVsTabuToXlsx(results) {
     if (Math.abs(d) > 0.01) dCell.font = { ...bold, color: { argb: RED } };
   });
 
-  await downloadXlsx(wb, `RendVsTabulado_${periodSuffix(results.period)}.xlsx`);
+  await downloadWorkbook(wb, `RendVsTabulado_${periodSuffix(results.period)}.xlsx`);
 }

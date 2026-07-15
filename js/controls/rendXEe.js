@@ -7,9 +7,11 @@
 //
 // Dif = Costo Total (Reporte) − Costo Total (Calculado del Tabulado).
 
-import { showToast } from '../ui/toast.js';
 import { DEFAULT_CONCEPT_CONFIG } from './rendVsTabu.js';
 import { diffStats } from './semaforo.js';
+import { renderExportMenu } from '../ui/exportMenu.js';
+import { initShowMorePagination, initSearchCombobox } from '../ui/tableTools.js';
+import { loadExcelJS, downloadWorkbook, downloadCsv, copyRowsToClipboard } from '../utils/exportData.js';
 
 // ── Definición de columnas calculadas desde el Tabulado ──────────────────────
 // Mismos colores que las categorías de Rend vs Tabulado.
@@ -313,10 +315,16 @@ export function renderRendXEeResults(results, container) {
     `<td style="text-align:right;background:${c.hdr};font-weight:600;">${fmt(totals[c.key])}</td>`
   ).join('');
 
-  const exportBtnWrap = document.createElement('div');
-  exportBtnWrap.style.cssText = 'display:flex;justify-content:flex-end;margin-bottom:var(--sp-2);';
-  exportBtnWrap.innerHTML = `<button type="button" id="js-rxe-export" class="btn btn--ghost btn--sm">⬇ Exportar a Excel</button>`;
+  // Barra: buscador (izquierda) + menú de exportar (derecha)
+  const toolbar = document.createElement('div');
+  toolbar.className = 'results-toolbar';
+  const searchEl = document.createElement('div');
+  const exportEl = document.createElement('div');
+  toolbar.appendChild(searchEl);
+  toolbar.appendChild(exportEl);
 
+  // Tabla — TOTAL GENERAL en su propio <tbody> para que quede afuera de la
+  // paginación/búsqueda (siempre visible, no cuenta como fila de datos).
   const tableWrap = document.createElement('div');
   tableWrap.style.overflowX = 'auto';
   tableWrap.innerHTML = `
@@ -333,6 +341,8 @@ export function renderRendXEeResults(results, container) {
       </thead>
       <tbody>
         ${dataRows}
+      </tbody>
+      <tbody>
         <tr style="background:var(--color-surface);">
           <td colspan="2" style="font-weight:600;white-space:nowrap;">TOTAL GENERAL</td>
           <td style="text-align:right;font-weight:600;">${fmt(totals.repTotal)}</td>
@@ -346,50 +356,30 @@ export function renderRendXEeResults(results, container) {
 
   container.innerHTML = '';
   container.appendChild(chipEl);
-  container.appendChild(exportBtnWrap);
+  container.appendChild(toolbar);
   container.appendChild(tableWrap);
 
-  container.querySelector('#js-rxe-export')?.addEventListener('click', async () => {
-    const btn = container.querySelector('#js-rxe-export');
-    btn.disabled = true;
-    btn.textContent = 'Generando…';
-    try {
-      await exportRendXEeToXlsx(results);
-    } catch (err) {
-      showToast('Error al generar el archivo: ' + err.message, 'danger');
-    } finally {
-      btn.disabled = false;
-      btn.textContent = '⬇ Exportar a Excel';
-    }
+  // Paginación (tablas de cientos de legajos) + buscador por legajo/nombre
+  const tbodyEl = tableWrap.querySelector('tbody');
+  const pagination = initShowMorePagination(tbodyEl, { pageSize: 50 });
+  initSearchCombobox(searchEl, {
+    rows,
+    trEls: pagination.dataRows,
+    getLabel: r => `${r.legajo} — ${r.nombre}`,
+    pagination,
+  });
+
+  const csvHeaders = ['Legajo', 'Nombre', 'COSTO TOTAL (Reporte)', ...CATS.map(c => c.label), 'COSTO TOTAL (Calculado)', 'Dif (Reporte - Calculado)'];
+  const csvRows = () => rows.map(r => [r.legajo, r.nombre, fmt(r.repTotal), ...CATS.map(c => fmt(r[c.key])), fmt(r.calcTotal), fmt(r.dif)]);
+
+  renderExportMenu(exportEl, {
+    onExcel: () => exportRendXEeToXlsx(results),
+    onCsv:   () => downloadCsv(csvHeaders, csvRows(), `RendXEE_${periodSuffix(results.period)}.csv`),
+    onCopy:  () => copyRowsToClipboard(csvHeaders, csvRows()),
   });
 }
 
 // ── Excel export ──────────────────────────────────────────────────────────────
-
-async function loadExcelJS() {
-  if (!window.ExcelJS) {
-    await new Promise((resolve, reject) => {
-      const s = document.createElement('script');
-      s.src = 'https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js';
-      s.onload = resolve;
-      s.onerror = () => reject(new Error('No se pudo cargar ExcelJS. Verificá la conexión a internet.'));
-      document.head.appendChild(s);
-    });
-  }
-}
-
-async function downloadXlsx(wb, fileName) {
-  const buf  = await wb.xlsx.writeBuffer();
-  const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href     = url;
-  a.download = fileName;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
 
 function dateSuffix() {
   return new Date().toISOString().slice(0, 10).replace(/-/g, '');
@@ -507,5 +497,5 @@ async function exportRendXEeToXlsx(results) {
   });
   if (hasDiff(totDif)) tr.getCell(totValues.length).font = { ...bold, color: { argb: RED } };
 
-  await downloadXlsx(wb, `RendXEE_${periodSuffix(results.period)}.xlsx`);
+  await downloadWorkbook(wb, `RendXEE_${periodSuffix(results.period)}.xlsx`);
 }

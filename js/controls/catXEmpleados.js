@@ -13,6 +13,8 @@
 //   6. Distribución por CC — ídem
 
 import { showToast } from '../ui/toast.js';
+import { initShowMorePagination, initSearchCombobox } from '../ui/tableTools.js';
+import { loadExcelJS, downloadWorkbook } from '../utils/exportData.js';
 
 /**
  * Resumen del control para la tarjeta colapsada en la pantalla de resultados.
@@ -213,8 +215,9 @@ export function renderCatXEmpleadosResults(results, container) {
 
   const missingInTabHtml = missingInTab.length === 0 ? '' : section(
     `Activos en Rep. Categ. que NO están en Tabulado (${missingInTab.length})`,
-    `<div style="overflow-x:auto;">
-      <table class="data-table data-table--compact">
+    `<div class="js-diff-search" data-diff-key="missingInTab"></div>
+    <div style="overflow-x:auto;">
+      <table class="data-table data-table--compact" data-diff-key="missingInTab">
         <thead>
           <tr>
             <th>ID</th><th>Apellido</th><th>Nombre</th>
@@ -237,8 +240,9 @@ export function renderCatXEmpleadosResults(results, container) {
 
   const missingInCatHtml = missingInCat.length === 0 ? '' : section(
     `En Tabulado que NO están en Rep. Categ. activos (${missingInCat.length})`,
-    `<div style="overflow-x:auto;">
-      <table class="data-table data-table--compact">
+    `<div class="js-diff-search" data-diff-key="missingInCat"></div>
+    <div style="overflow-x:auto;">
+      <table class="data-table data-table--compact" data-diff-key="missingInCat">
         <thead><tr><th>ID</th><th>Nombre</th></tr></thead>
         <tbody>
           ${missingInCat.map(r => `
@@ -249,16 +253,19 @@ export function renderCatXEmpleadosResults(results, container) {
     </div>`
   );
 
-  const discrepanciesHtml = fieldDiscrepancies.length === 0 ? '' : section(
+  // Una fila por (empleado, campo con diferencia) — aplanado en el MISMO orden
+  // que se pinta, para que pagination/combobox correlacionen 1:1 con los <tr>.
+  const discRows = fieldDiscrepancies.flatMap(e => e.diffs.map(d => ({ e, d })));
+  const discrepanciesHtml = discRows.length === 0 ? '' : section(
     `Discrepancias de campo en empleados coincidentes (${fieldDiscrepancies.length})`,
-    `<div style="overflow-x:auto;">
-      <table class="data-table data-table--compact">
+    `<div class="js-diff-search" data-diff-key="discrepancies"></div>
+    <div style="overflow-x:auto;">
+      <table class="data-table data-table--compact" data-diff-key="discrepancies">
         <thead>
           <tr><th>ID</th><th>Empleado</th><th>Campo</th><th>Valor en Rep. Categ.</th><th>Valor en Tabulado</th></tr>
         </thead>
         <tbody>
-          ${fieldDiscrepancies.flatMap(e =>
-            e.diffs.map(d => `
+          ${discRows.map(({ e, d }) => `
               <tr>
                 <td>${esc(e.id)}</td>
                 <td>${esc([e.apellido, e.nombre].filter(Boolean).join(' '))}</td>
@@ -266,8 +273,7 @@ export function renderCatXEmpleadosResults(results, container) {
                 <td>${esc(d.cat)}</td>
                 <td>${esc(d.tab)}</td>
               </tr>
-            `)
-          ).join('')}
+          `).join('')}
         </tbody>
       </table>
     </div>`
@@ -392,6 +398,26 @@ export function renderCatXEmpleadosResults(results, container) {
   const sectionsWrap = document.createElement('div');
   sectionsWrap.innerHTML = sectionsHtml;
   container.appendChild(sectionsWrap);
+
+  // Paginación (50 filas) + buscador en cada una de las 3 tablas de
+  // diferencias (missingInTab/missingInCat/discrepancies). Las tablas de
+  // distribución (byPuesto/byCC) son pocas filas y no lo necesitan.
+  wireDiffTableTools(sectionsWrap, 'missingInTab', missingInTab, r => `${r.id} — ${[r.apellido, r.nombre].filter(Boolean).join(' ')}`);
+  wireDiffTableTools(sectionsWrap, 'missingInCat', missingInCat, r => `${r.id} — ${r.apellidoNombre}`);
+  wireDiffTableTools(sectionsWrap, 'discrepancies', discRows, ({ e, d }) => `${e.id} — ${[e.apellido, e.nombre].filter(Boolean).join(' ')} — ${d.field}`);
+}
+
+function wireDiffTableTools(root, diffKey, rows, getLabel) {
+  if (!rows.length) return;
+  const table    = root.querySelector(`table[data-diff-key="${diffKey}"]`);
+  const searchEl = root.querySelector(`.js-diff-search[data-diff-key="${diffKey}"]`);
+  if (!table || !searchEl) return;
+  const tbodyEl = table.querySelector('tbody');
+  const pagination = initShowMorePagination(tbodyEl, { pageSize: 50 });
+  initSearchCombobox(searchEl, {
+    rows, trEls: pagination.dataRows, getLabel, pagination,
+    label: 'Buscar', placeholder: 'ID o nombre…',
+  });
 }
 
 // ── Chip de resumen de diferencias ───────────────────────────────────────────
@@ -483,18 +509,6 @@ function buildDiffChip(summary) {
 }
 
 // ── Export a Excel ────────────────────────────────────────────────────────────
-
-async function loadExcelJS() {
-  if (!window.ExcelJS) {
-    await new Promise((resolve, reject) => {
-      const s = document.createElement('script');
-      s.src = 'https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js';
-      s.onload = resolve;
-      s.onerror = () => reject(new Error('No se pudo cargar ExcelJS. Verificá la conexión a internet.'));
-      document.head.appendChild(s);
-    });
-  }
-}
 
 async function exportCatXEmpleadosToXlsx(results) {
   await loadExcelJS();
@@ -591,18 +605,6 @@ function addDistributionSheet(wb, sheetName, labelCol, rows, styleHeader, base, 
   }
 }
 
-async function downloadXlsx(wb, fileName) {
-  const buf  = await wb.xlsx.writeBuffer();
-  const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href     = url;
-  a.download = fileName;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
 
 function dateSuffix() {
   return new Date().toISOString().slice(0, 10).replace(/-/g, '');

@@ -1,6 +1,8 @@
 // gsPers.js — Controles de Gastos Personales y Cochera (GS Pers)
-import { showToast } from '../ui/toast.js';
 import { diffStats } from './semaforo.js';
+import { renderExportMenu } from '../ui/exportMenu.js';
+import { initShowMorePagination, initSearchCombobox } from '../ui/tableTools.js';
+import { loadExcelJS, downloadWorkbook, downloadCsv, copyRowsToClipboard } from '../utils/exportData.js';
 //
 // Modo 1 — "Controlar": cruza GTOS_PERSONALES y DTO_COCHERA del Reporte de GS Pers
 //   contra las columnas configuradas en el Tabulado (tabGtosPersonalesColumn / tabDtoCocheraColumn).
@@ -123,25 +125,13 @@ export function renderGsPersResults(results, container) {
       ? 'color:var(--color-danger);font-weight:600;'
       : '';
 
-  // Botón exportar
+  // Barra: buscador (izquierda) + menú de exportar (derecha)
   const toolbar = document.createElement('div');
-  toolbar.style.cssText = 'display:flex;justify-content:flex-end;padding:var(--sp-3) var(--sp-3) 0;';
-  const exportBtn = document.createElement('button');
-  exportBtn.className = 'btn btn--primary btn--sm';
-  exportBtn.textContent = '⬇ Exportar .xlsx';
-  exportBtn.addEventListener('click', async () => {
-    exportBtn.disabled = true;
-    exportBtn.textContent = 'Generando…';
-    try {
-      await exportGsPersToXlsx(results);
-    } catch (err) {
-      showToast('Error al generar el archivo: ' + err.message, 'danger');
-    } finally {
-      exportBtn.disabled = false;
-      exportBtn.textContent = '⬇ Exportar .xlsx';
-    }
-  });
-  toolbar.appendChild(exportBtn);
+  toolbar.className = 'results-toolbar';
+  const searchEl = document.createElement('div');
+  const exportEl = document.createElement('div');
+  toolbar.appendChild(searchEl);
+  toolbar.appendChild(exportEl);
 
   // Tabla
   const tableWrap = document.createElement('div');
@@ -185,6 +175,25 @@ export function renderGsPersResults(results, container) {
   container.innerHTML = '';
   container.appendChild(toolbar);
   container.appendChild(tableWrap);
+
+  // Paginación (tablas de cientos de legajos) + buscador por legajo
+  const tbodyEl = tableWrap.querySelector('tbody');
+  const pagination = initShowMorePagination(tbodyEl, { pageSize: 50 });
+  initSearchCombobox(searchEl, {
+    rows,
+    trEls: pagination.dataRows,
+    getLabel: r => `${r.legajo}`,
+    pagination,
+  });
+
+  const csvHeaders = ['Legajo', 'GTOS_PERSONALES', 'CTRL GTOS_PERSONALES', 'DTO_COCHERA', 'CTRL DTO_COCHERA', 'Legajo (Tab)', 'GTOS_PERSONALES (Tab)', 'DTO_COCHERA (Tab)'];
+  const csvRows = () => rows.map(r => [r.legajo, fmt(r.gtos), fmt(r.ctrlGtos), fmt(r.dto), fmt(r.ctrlDto), r.legajo, fmt(r.tabValGtos), fmt(r.tabValDto)]);
+
+  renderExportMenu(exportEl, {
+    onExcel: () => exportGsPersToXlsx(results),
+    onCsv:   () => downloadCsv(csvHeaders, csvRows(), `GsPers_Control_${periodSuffix(results.period)}.csv`),
+    onCopy:  () => copyRowsToClipboard(csvHeaders, csvRows()),
+  });
 }
 
 // ── Modo 2: Generar Reporte ───────────────────────────────────────────────────
@@ -274,25 +283,13 @@ export function renderGsPersReporteResults(results, container) {
     cols.hasNCC       && { label: 'N_CENTRO_COSTO',  key: 'nCC',      type: 'txt' },
   ].filter(Boolean);
 
-  // Botón exportar
+  // Barra: buscador (izquierda) + menú de exportar (derecha)
   const toolbar = document.createElement('div');
-  toolbar.style.cssText = 'display:flex;justify-content:flex-end;padding:var(--sp-3) var(--sp-3) 0;';
-  const exportBtn = document.createElement('button');
-  exportBtn.className = 'btn btn--primary btn--sm';
-  exportBtn.textContent = '⬇ Exportar .xlsx';
-  exportBtn.addEventListener('click', async () => {
-    exportBtn.disabled = true;
-    exportBtn.textContent = 'Generando…';
-    try {
-      await exportGsPersReporteToXlsx(results);
-    } catch (err) {
-      showToast('Error al generar el archivo: ' + err.message, 'danger');
-    } finally {
-      exportBtn.disabled = false;
-      exportBtn.textContent = '⬇ Exportar .xlsx';
-    }
-  });
-  toolbar.appendChild(exportBtn);
+  toolbar.className = 'results-toolbar';
+  const searchEl = document.createElement('div');
+  const exportEl = document.createElement('div');
+  toolbar.appendChild(searchEl);
+  toolbar.appendChild(exportEl);
 
   const tableWrap = document.createElement('div');
   tableWrap.style.overflowX = 'auto';
@@ -329,21 +326,31 @@ export function renderGsPersReporteResults(results, container) {
   container.innerHTML = '';
   container.appendChild(toolbar);
   container.appendChild(tableWrap);
+
+  if (colDefs.length <= 3) return; // sin tabla real, no hay nada que paginar/exportar
+
+  const tbodyEl = tableWrap.querySelector('tbody');
+  const pagination = initShowMorePagination(tbodyEl, { pageSize: 50 });
+  const legajoKey  = colDefs.find(c => c.key === 'legajo') ? 'legajo' : colDefs[0].key;
+  const nombreKey  = cols.hasNombre ? 'nombre' : (cols.hasApellido1 ? 'apellido1' : null);
+  initSearchCombobox(searchEl, {
+    rows,
+    trEls: pagination.dataRows,
+    getLabel: r => nombreKey ? `${r[legajoKey]} — ${r[nombreKey]}` : `${r[legajoKey]}`,
+    pagination,
+  });
+
+  const csvHeaders = colDefs.map(c => c.label);
+  const csvRows = () => rows.map(r => colDefs.map(c => c.type === 'num' ? fmt(r[c.key]) : (r[c.key] ?? '')));
+
+  renderExportMenu(exportEl, {
+    onExcel: () => exportGsPersReporteToXlsx(results),
+    onCsv:   () => downloadCsv(csvHeaders, csvRows(), `GsPers_Reporte_${periodSuffix(results.period)}.csv`),
+    onCopy:  () => copyRowsToClipboard(csvHeaders, csvRows()),
+  });
 }
 
 // ── Exports a Excel ───────────────────────────────────────────────────────────
-
-async function loadExcelJS() {
-  if (!window.ExcelJS) {
-    await new Promise((resolve, reject) => {
-      const s = document.createElement('script');
-      s.src = 'https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js';
-      s.onload = resolve;
-      s.onerror = () => reject(new Error('No se pudo cargar ExcelJS. Verificá la conexión a internet.'));
-      document.head.appendChild(s);
-    });
-  }
-}
 
 async function exportGsPersToXlsx(results) {
   await loadExcelJS();
@@ -427,7 +434,7 @@ async function exportGsPersToXlsx(results) {
     dr.getCell(6).font = { ...base };
   }
 
-  await downloadXlsx(wb, `GsPers_Control_${periodSuffix(results.period)}.xlsx`);
+  await downloadWorkbook(wb, `GsPers_Control_${periodSuffix(results.period)}.xlsx`);
 }
 
 async function exportGsPersReporteToXlsx(results) {
@@ -483,7 +490,7 @@ async function exportGsPersReporteToXlsx(results) {
     });
   }
 
-  await downloadXlsx(wb, `GsPers_Reporte_${periodSuffix(results.period)}.xlsx`);
+  await downloadWorkbook(wb, `GsPers_Reporte_${periodSuffix(results.period)}.xlsx`);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -537,17 +544,4 @@ function lastBusinessDay(year, month) {
 
 function fmtDateAR(d) {
   return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
-}
-
-async function downloadXlsx(wb, fileName) {
-  const buf  = await wb.xlsx.writeBuffer();
-  const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href     = url;
-  a.download = fileName;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }
