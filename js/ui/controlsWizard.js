@@ -34,6 +34,7 @@ import { currentPeriod, periodOptions } from '../utils/dates.js';
 import { renderConceptGroupingEditor }     from './rendVsTabuConceptEditor.js';
 import { renderRendVsAsientoConfigEditor, DEFAULT_RVA_CONFIG } from '../controls/rendVsAsiento.js';
 import { showToast, showConfirm }          from './toast.js';
+import { renderHelpPopover, CONTROL_HELP }  from './helpPopover.js';
 
 // ── Caché de sesión del Tabulado ─────────────────────────────────────────────
 // Evita re-subir el Tabulado entre runs mientras la página esté activa.
@@ -134,6 +135,7 @@ export async function renderControlsWizard(root, clientId) {
         <div class="page-actions__title">
           <a href="#/" class="btn btn--ghost btn--sm">← Inicio</a>
           <h2 style="margin:0 0 0 var(--sp-3);">Controles — ${esc(client.name)}</h2>
+          <span id="js-control-help"></span>
         </div>
       </div>
       <div class="wizard-steps" id="js-wizard-steps" style="margin:var(--sp-3) 0;"></div>
@@ -150,6 +152,10 @@ export async function renderControlsWizard(root, clientId) {
       "></div>
     </div>
   `;
+
+  // Ayuda "cómo ejecutar un control" — vive en el header, así queda visible en
+  // los 3 pasos (el header no se re-renderiza al cambiar de paso).
+  renderHelpPopover(root.querySelector('#js-control-help'), CONTROL_HELP);
 
   render(root, state);
 }

@@ -10,6 +10,7 @@ import { computeSemaforoStatus, DEFAULT_SEMAFORO_THRESHOLD_PCT } from '../contro
 import { periodToLabel }    from '../utils/dates.js';
 import { formatAmount }     from '../utils/currency.js';
 import { showToast }        from './toast.js';
+import { renderHelpPopover, CONTROL_HELP } from './helpPopover.js';
 
 const TIER_RANK = { error: 0, warn: 1, ok: 2, info: 3 };
 const TIER_DOT  = { error: 'error', warn: 'warn', ok: 'ok', info: 'neutral' };
@@ -51,6 +52,7 @@ export async function renderControlsResults(root, runId) {
           <h2 style="margin:0 0 0 var(--sp-3);">
             ${esc(client?.name ?? 'Cliente')} — Controles ${esc(periodLabel)}
           </h2>
+          <span id="js-control-help"></span>
         </div>
         <div class="page-actions__buttons">
           <a href="#/controls/${run.clientId}" class="btn btn--primary btn--sm btn--pill">▶ Nuevo control</a>
@@ -68,6 +70,8 @@ export async function renderControlsResults(root, runId) {
       <div id="js-control-sections"></div>
     </div>
   `;
+
+  renderHelpPopover(root.querySelector('#js-control-help'), CONTROL_HELP);
 
   // Banner Borrador / Definitivo con toggle
   const bannerEl = root.querySelector('#js-status-banner');
