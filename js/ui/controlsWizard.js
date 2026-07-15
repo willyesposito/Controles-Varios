@@ -551,6 +551,44 @@ function renderStepControls(container, state, root) {
 
 // ── Paso 1: Cargar todos los archivos ─────────────────────────────────────────
 
+// Panel lateral del paso Archivos: recap de los controles elegidos en el paso
+// anterior (de sólo lectura acá) + vista previa de "Umbrales". Los umbrales
+// todavía son fijos (no configurables) — ver README del rediseño.
+function buildWizardSidebarHtml(state) {
+  const selectedLabels = state.selectedControls
+    .map(id => CONTROL_REGISTRY[id]?.label)
+    .filter(Boolean);
+  const pillsHtml = selectedLabels.length
+    ? selectedLabels.map(l => `<span class="control-recap-pill">✓ ${esc(l)}</span>`).join('')
+    : '<span class="text-sm text-muted">Ningún control seleccionado.</span>';
+
+  return `
+    <div>
+      <span class="wizard-section-label">Controles a ejecutar</span>
+      <div class="control-recap-pills">${pillsHtml}</div>
+      <p class="wizard-section-hint" style="margin-top:var(--sp-2);">Elegidos en el paso anterior — usá "← Anterior" para cambiarlos.</p>
+    </div>
+    <div>
+      <span class="wizard-section-label">Umbrales</span>
+      <div class="threshold-grid">
+        <div>
+          <span class="threshold-field__label">Dif. absoluta &gt;</span>
+          <div class="threshold-field__value">$ 1,00</div>
+        </div>
+        <div>
+          <span class="threshold-field__label">Dif. porcentual &gt;</span>
+          <div class="threshold-field__value">0,1 %</div>
+        </div>
+      </div>
+      <div class="threshold-checkbox-static">
+        <span class="threshold-checkbox-static__box">✓</span>
+        Marcar legajos presentes en un archivo y ausentes en el otro
+      </div>
+      <p class="threshold-note">Vista previa — todavía no se pueden editar estos valores desde acá.</p>
+    </div>
+  `;
+}
+
 function renderStepFiles(container, state, root) {
   const anyTabRequired = state.selectedControls.some(
     id => CONTROL_REGISTRY[id]?.tabRequired !== false
@@ -567,34 +605,41 @@ function renderStepFiles(container, state, root) {
       Cargá los archivos necesarios para los controles seleccionados.
     </p>
 
-    ${anyTabRequired ? `
-      <details style="margin-bottom:var(--sp-3);" ${state.catalog ? '' : 'open'}>
-        <summary style="
-          cursor:pointer;font-size:var(--text-sm);font-weight:var(--fw-semibold);
-          color:var(--color-primary);list-style:none;display:flex;align-items:center;
-          gap:var(--sp-2);user-select:none;margin-bottom:var(--sp-1);
-        ">
-          <span>▸</span> Catálogo de Conceptos (opcional)
-        </summary>
-        <div style="margin-top:var(--sp-2);padding:var(--sp-3);background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);">
-          <p class="text-sm text-muted" style="margin:0 0 var(--sp-2);">
-            El catálogo define qué columnas del Tabulado corresponden a cada concepto. Si no cargás uno, se usa el catálogo estándar.
-          </p>
-          <div id="js-catalog-status" style="margin-bottom:var(--sp-2);">
-            <div class="alert ${state.catalog ? 'alert--success' : 'alert--info'}" style="margin:0;padding:var(--sp-2) var(--sp-3);font-size:var(--text-sm);">
-              ${catSummary}
+    <div class="wizard-onepane">
+      <div class="wizard-onepane__files">
+        ${anyTabRequired ? `
+          <details style="margin-bottom:var(--sp-3);" ${state.catalog ? '' : 'open'}>
+            <summary style="
+              cursor:pointer;font-size:var(--text-sm);font-weight:var(--fw-semibold);
+              color:var(--color-primary);list-style:none;display:flex;align-items:center;
+              gap:var(--sp-2);user-select:none;margin-bottom:var(--sp-1);
+            ">
+              <span>▸</span> Catálogo de Conceptos (opcional)
+            </summary>
+            <div style="margin-top:var(--sp-2);padding:var(--sp-3);background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);">
+              <p class="text-sm text-muted" style="margin:0 0 var(--sp-2);">
+                El catálogo define qué columnas del Tabulado corresponden a cada concepto. Si no cargás uno, se usa el catálogo estándar.
+              </p>
+              <div id="js-catalog-status" style="margin-bottom:var(--sp-2);">
+                <div class="alert ${state.catalog ? 'alert--success' : 'alert--info'}" style="margin:0;padding:var(--sp-2) var(--sp-3);font-size:var(--text-sm);">
+                  ${catSummary}
+                </div>
+              </div>
+              <div id="js-catalog-upload" style="${state.catalog ? 'display:none' : ''}"></div>
+              ${state.catalog ? `<button class="btn btn--ghost btn--sm" id="js-catalog-replace">↺ Reemplazar catálogo</button>` : ''}
             </div>
-          </div>
-          <div id="js-catalog-upload" style="${state.catalog ? 'display:none' : ''}"></div>
-          ${state.catalog ? `<button class="btn btn--ghost btn--sm" id="js-catalog-replace">↺ Reemplazar catálogo</button>` : ''}
-        </div>
-      </details>
+          </details>
 
-      <div id="js-tab-upload"></div>
-      <div id="js-tab-analysis"></div>
-    ` : ''}
+          <div id="js-tab-upload"></div>
+          <div id="js-tab-analysis"></div>
+        ` : ''}
 
-    <div id="js-control-files"></div>
+        <div id="js-control-files"></div>
+      </div>
+      <div class="wizard-onepane__side">
+        ${buildWizardSidebarHtml(state)}
+      </div>
+    </div>
   `;
 
   // ── Tabulado + catálogo ──────────────────────────────────────────────────────
@@ -1013,7 +1058,8 @@ function renderStepExecute(container, state, root) {
       </div>
     </label>
 
-    <button class="btn btn--primary btn--lg" id="js-execute-btn">▶ Ejecutar controles</button>
+    <button class="btn btn--primary btn--lg btn--pill" id="js-execute-btn">${esc(executeCtaLabel(state))}</button>
+    <p class="text-sm text-muted" style="text-align:center;margin-top:var(--sp-2);">Sin salir de esta pantalla</p>
     <div id="js-execute-status" style="margin-top:var(--sp-5);"></div>
   `;
 
@@ -1235,6 +1281,17 @@ async function executeControls(state, statusEl, container, root) {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+// El botón de ejecutar dice exactamente qué va a pasar (cuántos controles,
+// sobre cuántos legajos) — se recalcula en vivo según la selección.
+function executeCtaLabel(state) {
+  const n = state.selectedControls.length;
+  const nCtrlTxt = `${n} control${n === 1 ? '' : 'es'}`;
+  const totalLegajos = state.tab?.parseMetadata?.totalRows;
+  return totalLegajos
+    ? `▶ Ejecutar ${nCtrlTxt} sobre ${totalLegajos.toLocaleString('es-AR')} legajos`
+    : `▶ Ejecutar ${nCtrlTxt}`;
+}
 
 function esc(str) {
   return String(str ?? '')

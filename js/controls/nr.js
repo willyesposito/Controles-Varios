@@ -1,5 +1,6 @@
 // nr.js — Control No Remunerativos (Control NR)
 import { showToast } from '../ui/toast.js';
+import { diffStats } from './semaforo.js';
 //
 // Modo 1 — "Controlar": cruza los 18 conceptos NR del Reporte de M4
 //   contra las columnas configuradas en el Tabulado.
@@ -39,6 +40,23 @@ const NR_CONCEPTS = [
 
 export function summarizeNr(results) {
   const s = results.summary;
+
+  const { unitsWithDiff, diffTotalAmount, worstCase } = diffStats(
+    results.rows,
+    NR_CONCEPTS.map(c => ({ key: c.key, get: row => row.valores[c.key]?.ctrl ?? null, label: c.label })),
+    (row, field) => `${field.label} — leg. ${row.legajo}`
+  );
+
+  // Concepto NR más afectado (el que aparece en más legajos con diferencia) —
+  // más útil acá que "el peor caso individual" porque hay 18 conceptos posibles.
+  const conceptCounts = NR_CONCEPTS
+    .map(c => ({ label: c.label, count: results.rows.filter(r => isDif(r.valores[c.key].ctrl)).length }))
+    .filter(c => c.count > 0)
+    .sort((a, b) => b.count - a.count);
+  const contextNote = conceptCounts.length
+    ? `concepto más afectado: ${conceptCounts[0].label}${conceptCounts.length > 1 ? ` (+${conceptCounts.length - 1} más)` : ''}`
+    : '18 conceptos NR verificados';
+
   return {
     status:   s.conDif > 0 ? 'warning' : 'success',
     headline: `${s.total} registros · ${s.sinTabData} sin datos en Tabulado`,
@@ -49,6 +67,12 @@ export function summarizeNr(results) {
         value: s.conDif,
       },
     ],
+    unit: 'legajo',
+    unitsTotal: s.total,
+    unitsWithDiff,
+    diffTotalAmount,
+    worstCase,
+    contextNote,
   };
 }
 
@@ -338,6 +362,12 @@ export function summarizeNrReporte(results) {
     status:   'info',
     headline: `${results.summary.total} registros — Reporte de NR generado del Tabulado`,
     insights: [],
+    unit:            null,
+    unitsTotal:      null,
+    unitsWithDiff:   null,
+    diffTotalAmount: null,
+    worstCase:       null,
+    contextNote:     null,
   };
 }
 

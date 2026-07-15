@@ -28,6 +28,13 @@ export function previousPeriod(period) {
   return `${year}-${String(month - 1).padStart(2, '0')}`;
 }
 
+/** Devuelve el período del mes siguiente. Ej: '2025-12' → '2026-01' */
+export function nextPeriod(period) {
+  const [year, month] = period.split('-').map(Number);
+  if (month === 12) return `${year + 1}-01`;
+  return `${year}-${String(month + 1).padStart(2, '0')}`;
+}
+
 /**
  * Devuelve una lista de los últimos N períodos para usar en un selector.
  * Cada elemento tiene { value: '2026-05', label: 'Mayo 2026' }

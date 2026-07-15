@@ -24,6 +24,15 @@ export function summarizeCatXEmpleados(results) {
     || s.missingInCatCount > 0
     || s.fieldDiscrepancyCount > 0;
   const sign = s.diff > 0 ? '+' : '';
+
+  // Este control no cruza montos en $ — es de conteo/coincidencia de empleados
+  // y campos (puesto/CC/depto). "Unidad" = legajo; unitsTotal toma el universo
+  // del Tabulado (referencia común a todos los controles de esta app).
+  const unitsWithDiff = s.missingInTabCount + s.missingInCatCount + s.fieldDiscrepancyCount;
+  const contextNote = unitsWithDiff > 0
+    ? `${s.missingInTabCount} sin Tabulado · ${s.missingInCatCount} sin Rep. Categ. · ${s.fieldDiscrepancyCount} discrepancias de campo`
+    : 'Empleados y campos (puesto/CC/depto) verificados';
+
   return {
     status: hasDiff ? 'warning' : 'success',
     headline: `EE x CATEG activos: ${s.catActivos} · Tabulado: ${s.tabTotal} · Diferencia neta: ${sign}${s.diff}`,
@@ -44,6 +53,12 @@ export function summarizeCatXEmpleados(results) {
         value: s.fieldDiscrepancyCount,
       },
     ],
+    unit:            'legajo',
+    unitsTotal:      s.tabTotal,
+    unitsWithDiff,
+    diffTotalAmount: null,
+    worstCase:       null,
+    contextNote,
   };
 }
 

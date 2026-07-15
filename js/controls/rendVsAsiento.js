@@ -1,4 +1,5 @@
 // rendVsAsiento.js — Control 6: Rendimiento vs Asiento (Contabilidad Desglosada)
+import { diffStats } from './semaforo.js';
 //
 // Compara el Reporte de Rendimiento de M4 (por CC) contra la Contabilidad
 // Desglosada (CONTA). Para cada CC, agrupa las filas de CONTA clasificando
@@ -744,13 +745,26 @@ export function runRendVsAsiento(rendRows, _tabRows, mapping) {
 
 export function summarizeRendVsAsiento(results) {
   if (results?.error) {
-    return { status: 'error', headline: results.error, insights: [] };
+    return {
+      status: 'error', headline: results.error, insights: [],
+      unit: null, unitsTotal: null, unitsWithDiff: null, diffTotalAmount: null, worstCase: null, contextNote: null,
+    };
   }
   const s = results.summary;
   const anyDiff = COLS.some(c => {
     const k = `dif${c.key.charAt(0).toUpperCase()}${c.key.slice(1)}`;
     return s[k] > 0;
   });
+
+  // Igual que en Rend vs Tabulado: unidad = CC, se excluye COSTO TOTAL de la
+  // suma de monto (ya es la suma de las otras 5 categorías).
+  const amountFields = COLS
+    .filter(c => c.key !== 'total')
+    .map(c => ({ key: c.dKey, get: r => r[c.dKey] }));
+  const { unitsWithDiff, diffTotalAmount, worstCase } = diffStats(
+    results.rows, amountFields, row => row.ccName || row.ccCode
+  );
+
   return {
     status:   anyDiff ? 'warning' : 'success',
     headline: `${s.total} centros de costo · ${s.sinContaData} sin datos en CONTA`
@@ -759,6 +773,12 @@ export function summarizeRendVsAsiento(results) {
       const k = `dif${c.key.charAt(0).toUpperCase()}${c.key.slice(1)}`;
       return { type: s[k] > 0 ? 'warning' : 'success', label: `diferencias ${c.label}`, value: s[k] };
     }),
+    unit: 'cc',
+    unitsTotal: s.total,
+    unitsWithDiff,
+    diffTotalAmount,
+    worstCase,
+    contextNote: null,
   };
 }
 

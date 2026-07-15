@@ -9,6 +9,7 @@
 
 import { showToast } from '../ui/toast.js';
 import { DEFAULT_CONCEPT_CONFIG } from './rendVsTabu.js';
+import { diffStats } from './semaforo.js';
 
 // ── Definición de columnas calculadas desde el Tabulado ──────────────────────
 // Mismos colores que las categorías de Rend vs Tabulado.
@@ -77,6 +78,16 @@ function buildColByCode(sampleRow) {
 export function summarizeRendXEe(results) {
   const s = results.summary;
   const anyIssue = s.conDif > 0 || s.sinTabData > 0 || s.soloEnTab > 0;
+
+  // Unidad = legajo. sinTabData/soloEnTab son legajos huérfanos (dif: null en
+  // ambos casos) — no tienen ambos lados del cruce, así que no entran en el
+  // monto de diferencia ni en el "peor caso", sólo afectan el status arriba.
+  const { unitsWithDiff, diffTotalAmount, worstCase } = diffStats(
+    results.rows,
+    [{ key: 'dif', get: r => r.dif }],
+    row => `leg. ${row.legajo}`
+  );
+
   return {
     status:   anyIssue ? 'warning' : 'success',
     headline: `${s.total} legajos · ${s.conDif} con diferencias de Costo Total`,
@@ -97,6 +108,12 @@ export function summarizeRendXEe(results) {
         value: s.soloEnTab,
       },
     ],
+    unit: 'legajo',
+    unitsTotal: s.total,
+    unitsWithDiff,
+    diffTotalAmount,
+    worstCase,
+    contextNote: null,
   };
 }
 

@@ -1,5 +1,6 @@
 // brutos.js — Controles del Reporte de Brutos
 import { showToast } from '../ui/toast.js';
+import { diffStats } from './semaforo.js';
 //
 // Modo 1 — "Controlar": cruza SAL_BASE y A_CTA_FUT_AUMEN del Reporte de Brutos
 //   contra las columnas configuradas en el Tabulado (tabSalBaseColumn / tabACuFutAumenColumn).
@@ -13,6 +14,22 @@ import { showToast } from '../ui/toast.js';
 export function summarizeBrutos(results) {
   const s = results.summary;
   const hasDiff = s.conDifSalario > 0 || s.conDifACuFutAumen > 0;
+
+  const { unitsWithDiff, diffTotalAmount, worstCase } = diffStats(
+    results.rows,
+    [
+      { key: 'ctrlSalBase',     get: r => r.ctrlSalBase,     label: 'SAL_BASE' },
+      { key: 'ctrlACuFutAumen', get: r => r.ctrlACuFutAumen, label: 'A_CTA_FUT_AUMEN' },
+    ],
+    (row, field) => `${field.label} — leg. ${row.legajo}`
+  );
+  const concepts = [];
+  if (s.conDifSalario > 0)     concepts.push('SAL_BASE');
+  if (s.conDifACuFutAumen > 0) concepts.push('A_CTA_FUT_AUMEN');
+  const contextNote = concepts.length === 0
+    ? 'SAL_BASE y A_CTA_FUT_AUMEN verificados'
+    : concepts.length === 1 ? `todos en ${concepts[0]}` : concepts.join(' y ');
+
   return {
     status:   hasDiff ? 'warning' : 'success',
     headline: `${s.total} registros · ${s.sinTabData} sin datos en Tabulado`,
@@ -28,6 +45,12 @@ export function summarizeBrutos(results) {
         value: s.conDifACuFutAumen,
       },
     ],
+    unit: 'legajo',
+    unitsTotal: s.total,
+    unitsWithDiff,
+    diffTotalAmount,
+    worstCase,
+    contextNote,
   };
 }
 
@@ -266,6 +289,14 @@ export function summarizeBrutosReporte(results) {
     status:   'info',
     headline: `${results.summary.total} registros — Reporte generado del Tabulado`,
     insights: [],
+    // Genera el reporte desde el Tabulado — no hay una segunda fuente contra
+    // la cual cruzar, así que no aplica un semáforo de diferencias.
+    unit:            null,
+    unitsTotal:      null,
+    unitsWithDiff:   null,
+    diffTotalAmount: null,
+    worstCase:       null,
+    contextNote:     null,
   };
 }
 

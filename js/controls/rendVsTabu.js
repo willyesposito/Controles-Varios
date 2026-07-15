@@ -1,4 +1,5 @@
 // rendVsTabu.js — Control 5: Rendimiento vs Tabulado (RendvsTabu)
+import { diffStats } from './semaforo.js';
 //
 // Compara el Reporte de Rendimiento de M4 (por CC) contra el Tabulado.
 // Calcula PRECIO, ASIG. ESTÍMULO, CARGAS SS, PROV. MES, PROV. CCSS MES
@@ -107,6 +108,17 @@ function buildColByCode(sampleRow) {
 export function summarizeRendVsTabu(results) {
   const s      = results.summary;
   const anyDiff = COLS.some(c => s[`dif${c.key.charAt(0).toUpperCase()}${c.key.slice(1)}`] > 0);
+
+  // Unidad de cruce = centro de costo (CC), no legajo. Se usan sólo las 5
+  // categorías componentes (no COSTO TOTAL, que es la suma de esas 5) para no
+  // contar dos veces la misma diferencia al sumar el monto total en juego.
+  const amountFields = COLS
+    .filter(c => c.key !== 'total')
+    .map(c => ({ key: c.dKey, get: r => r[c.dKey] }));
+  const { unitsWithDiff, diffTotalAmount, worstCase } = diffStats(
+    results.rows, amountFields, row => row.ccName || row.ccCode
+  );
+
   return {
     status:   anyDiff ? 'warning' : 'success',
     headline: `${s.total} centros de costo · ${s.sinTabData} sin datos en Tabulado`,
@@ -118,6 +130,12 @@ export function summarizeRendVsTabu(results) {
         value: s[k],
       };
     }),
+    unit: 'cc',
+    unitsTotal: s.total,
+    unitsWithDiff,
+    diffTotalAmount,
+    worstCase,
+    contextNote: null,
   };
 }
 

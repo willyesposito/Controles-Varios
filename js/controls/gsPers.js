@@ -1,5 +1,6 @@
 // gsPers.js — Controles de Gastos Personales y Cochera (GS Pers)
 import { showToast } from '../ui/toast.js';
+import { diffStats } from './semaforo.js';
 //
 // Modo 1 — "Controlar": cruza GTOS_PERSONALES y DTO_COCHERA del Reporte de GS Pers
 //   contra las columnas configuradas en el Tabulado (tabGtosPersonalesColumn / tabDtoCocheraColumn).
@@ -12,6 +13,22 @@ import { showToast } from '../ui/toast.js';
 export function summarizeGsPers(results) {
   const s = results.summary;
   const hasDiff = s.conDifGtos > 0 || s.conDifDto > 0;
+
+  const { unitsWithDiff, diffTotalAmount, worstCase } = diffStats(
+    results.rows,
+    [
+      { key: 'ctrlGtos', get: r => r.ctrlGtos, label: 'GTOS_PERSONALES' },
+      { key: 'ctrlDto',  get: r => r.ctrlDto,  label: 'DTO_COCHERA' },
+    ],
+    (row, field) => `${field.label} — leg. ${row.legajo}`
+  );
+  const concepts = [];
+  if (s.conDifGtos > 0) concepts.push('GTOS_PERSONALES');
+  if (s.conDifDto > 0)  concepts.push('DTO_COCHERA');
+  const contextNote = concepts.length === 0
+    ? 'GTOS_PERSONALES y DTO_COCHERA verificados'
+    : concepts.length === 1 ? `todos en ${concepts[0]}` : concepts.join(' y ');
+
   return {
     status:   hasDiff ? 'warning' : 'success',
     headline: `${s.total} registros · ${s.sinTabData} sin datos en Tabulado`,
@@ -27,6 +44,12 @@ export function summarizeGsPers(results) {
         value: s.conDifDto,
       },
     ],
+    unit: 'legajo',
+    unitsTotal: s.total,
+    unitsWithDiff,
+    diffTotalAmount,
+    worstCase,
+    contextNote,
   };
 }
 
@@ -217,6 +240,12 @@ export function summarizeGsPersReporte(results) {
     status:   'info',
     headline: `${results.summary.total} registros — Reporte de GS Pers generado del Tabulado`,
     insights: [],
+    unit:            null,
+    unitsTotal:      null,
+    unitsWithDiff:   null,
+    diffTotalAmount: null,
+    worstCase:       null,
+    contextNote:     null,
   };
 }
 
