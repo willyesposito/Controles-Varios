@@ -705,6 +705,75 @@
   to   { transform: translateY(0);     opacity: 1; }
 }
 
+/* ── Help popover (botón "?" con ayuda) — ver js/ui/helpPopover.js ──────── */
+.help-popover {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: var(--sp-2);
+}
+.help-popover__btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--celeste, var(--color-primary));
+  background: var(--celeste-dim, var(--color-info-bg));
+  color: var(--celeste-deeper, var(--color-primary));
+  font-size: 13px;
+  font-weight: var(--fw-bold);
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition), color var(--transition);
+}
+.help-popover__btn:hover {
+  background: var(--celeste, var(--color-primary));
+  color: var(--color-white);
+}
+.help-popover__btn:focus-visible {
+  outline: 3px solid var(--color-primary);
+  outline-offset: 2px;
+}
+.help-popover__panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: var(--z-toast, 1000);
+  width: 300px;
+  max-width: 80vw;
+  padding: var(--sp-4);
+  background: var(--color-surface);
+  border: var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  text-align: left;
+  cursor: auto;
+}
+.help-popover__title {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--text-base);
+  color: var(--color-primary);
+}
+.help-popover__body { font-size: var(--text-sm); color: var(--color-text, var(--color-black)); }
+.help-popover__steps {
+  margin: 0;
+  padding-left: 1.25em;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  line-height: 1.45;
+}
+.help-popover__note {
+  margin: var(--sp-3) 0 0;
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--color-border);
+  font-size: var(--text-sm);
+  color: var(--color-wordmark);
+  line-height: 1.45;
+}
+
 /* ── Empty state ─────────────────────────────────────────────── */
 .empty-state {
   text-align: center;

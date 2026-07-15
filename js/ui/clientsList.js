@@ -9,6 +9,7 @@ import { showToast, showConfirm } from './toast.js';
 import { CONTROL_REGISTRY } from '../controls/registry.js';
 import { computeSemaforoStatus, DEFAULT_SEMAFORO_THRESHOLD_PCT } from '../controls/semaforo.js';
 import { periodToLabel, currentPeriod, previousPeriod, nextPeriod } from '../utils/dates.js';
+import { renderHelpPopover, CONTROL_HELP } from './helpPopover.js';
 
 const TIER_DOT = { ok: 'ok', warn: 'warn', error: 'error', neutral: 'neutral', info: 'neutral' };
 
@@ -30,6 +31,7 @@ export async function renderClientsList(root) {
       <div class="page-actions">
         <div class="page-actions__title">
           <h2>Clientes</h2>
+          <span id="js-control-help"></span>
         </div>
         <div class="page-actions__buttons" style="align-items:center;">
           <div class="month-selector">
@@ -58,6 +60,7 @@ export async function renderClientsList(root) {
   root.querySelector('#js-new-client-btn').addEventListener('click', () => showCreateModal(root, state));
   root.querySelector('#js-month-prev').addEventListener('click', () => changeMonth(root, state, previousPeriod));
   root.querySelector('#js-month-next').addEventListener('click', () => changeMonth(root, state, nextPeriod));
+  renderHelpPopover(root.querySelector('#js-control-help'), CONTROL_HELP);
 
   updateMonthLabel(root, state);
   await reloadList(root, state);
